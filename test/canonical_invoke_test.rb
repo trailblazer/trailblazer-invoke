@@ -13,6 +13,14 @@ class CanonicalInvokeTest < Minitest::Spec
 
   let(:ctx) { {seq: [], model: Object} }
 
+  let(:create_trace) do
+    %(CanonicalInvokeTest::Create
+|-- \e[32mStart.default\e[0m
+|-- \e[32mmodel\e[0m
+`-- End.success
+)
+  end
+
   describe "module!(self) without options" do
     let(:kernel) {
       Class.new { Trailblazer::Invoke.module!(self) }.new
@@ -29,47 +37,30 @@ class CanonicalInvokeTest < Minitest::Spec
 
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
-      assert_equal stdout, %(CanonicalInvokeTest::Create
-|-- \e[32mStart.default\e[0m
-|-- \e[32mmodel\e[0m
-`-- End.success
-)
+      assert_equal stdout, create_trace
     end
 
-  end
-
-  it "can be used without setting dynamic_args" do
-
-
-          kernel = Class.new do
-      include Trailblazer::Invoke.module!(self)
-
-
-      def __(operation, ctx, flow_options: FLOW_OPTIONS, **, &block)
-        super
-      end
-
-      FLOW_OPTIONS = {
+    it "allows passing {:flow_options} to {#__}" do
+      _FLOW_OPTIONS = {
         context_options: {
           aliases: {"model": :record},
           container_class: Trailblazer::Context::Container::WithAliases,
         }
       }
+
+      signal, (ctx,) = kernel.__(Create, self.ctx, flow_options: _FLOW_OPTIONS)
+      assert_equal ctx[:model], Object
+      assert_equal ctx[:record], Object
+      assert_equal ctx.keys, [:seq, :model, :record]
+
+      stdout, _ = capture_io do
+        signal, (ctx,) = kernel.__?(Create, self.ctx, flow_options: _FLOW_OPTIONS)
+      end
+
+      assert_equal ctx[:model], Object
+      assert_equal ctx.keys, [:seq, :model, :record]
+      assert_equal stdout, create_trace
     end
-
-    signal, (ctx,) = kernel.new.__(Create, self.ctx) # FLOW_OPTIONS are applied!
-
-    assert_equal ctx[:record], Object
-
-    stdout, _ = capture_io do
-      signal, (ctx,) = kernel.new.__?(Create, self.ctx) # FLOW_OPTIONS are applied!
-    end
-
-    assert_equal ctx[:record], Object
-    assert_equal stdout, %(RuntimeTest::Create
-|-- \e[32mStart.default\e[0m
-|-- \e[32mmodel\e[0m
-`-- End.success
-)
   end
+
 end
