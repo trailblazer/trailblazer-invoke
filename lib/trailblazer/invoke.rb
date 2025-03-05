@@ -3,13 +3,19 @@ require "trailblazer/invoke/matcher"
 
 module Trailblazer
   module Invoke
-    def self.module!(target, canonical_invoke_name: :__,  &arguments_block)
+    def self.module!(target, canonical_invoke_name: :__, canonical_wtf_name: "#{canonical_invoke_name}?", &arguments_block)
+      arguments_block = ->(*) { {} } unless block_given?
+
       target.include Canonical # #__
 
       # DISCUSS: store arguments_block in a class instance variable and refrain from using {define_method}?
 
       target.define_method(canonical_invoke_name) do |*args, **kws, &block|
         Canonical.__(*args, my_dynamic_arguments: arguments_block, **kws, &block)
+      end
+
+      target.define_method(canonical_wtf_name) do |*args, **kws, &block|
+        Canonical.__?(*args, my_dynamic_arguments: arguments_block, **kws, &block)
       end
     end
 
@@ -24,17 +30,17 @@ module Trailblazer
 
       def __(activity, options, my_dynamic_arguments:, **kws, &block)
         Trailblazer::Invoke.(
-          activity, options,
+          activity,
+          options,
           **my_dynamic_arguments.(activity, options, **kws), # represents {:invoke_method} and {:present_options}
           **kws,
           &block
         )
       end
 
-      def __?(activity, options, my_dynamic_arguments:, **kws, &block)
-        Trailblazer::Invoke.(
-          activity, options,
-          **my_dynamic_arguments.(activity, options, **kws), # represents {:invoke_method} and {:present_options}
+      def __?(*args, **kws, &block)
+        __(
+          *args,
           invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
           **kws,
           &block
