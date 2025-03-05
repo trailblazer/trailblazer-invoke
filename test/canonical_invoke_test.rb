@@ -28,6 +28,8 @@ class CanonicalInvokeTest < Minitest::Spec
 
     it "calls the activity" do
       signal, (ctx,) = kernel.__(Create, self.ctx)
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
 
@@ -35,6 +37,7 @@ class CanonicalInvokeTest < Minitest::Spec
         signal, (ctx,) = kernel.__?(Create, self.ctx)
       end
 
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
       assert_equal stdout, create_trace
@@ -49,6 +52,8 @@ class CanonicalInvokeTest < Minitest::Spec
       }
 
       signal, (ctx,) = kernel.__(Create, self.ctx, flow_options: _FLOW_OPTIONS)
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx[:model], Object
       assert_equal ctx[:record], Object
       assert_equal ctx.keys, [:seq, :model, :record]
@@ -57,10 +62,68 @@ class CanonicalInvokeTest < Minitest::Spec
         signal, (ctx,) = kernel.__?(Create, self.ctx, flow_options: _FLOW_OPTIONS)
       end
 
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx[:model], Object
+      assert_equal ctx[:record], Object
       assert_equal ctx.keys, [:seq, :model, :record]
       assert_equal stdout, create_trace
     end
   end
 
+  describe "module!(self) with dynamic args" do
+    it "allows passing arbitrary options to {#__}, such as {:enable_tracing} and allows setting {:invoke_method} and {:flow_options}" do
+      kernel = Class.new do
+        Trailblazer::Invoke.module!(self) do |activity, options, enable_tracing:, **|
+          # This tests we can pass arbitrary options such as {:enable_tracing},
+          # and that we can set invoke_method
+          runtime_call_keywords = enable_tracing ? {invoke_method: Trailblazer::Developer::Wtf.method(:invoke)} : {}
+
+          {
+            flow_options: {
+              context_options: {
+                aliases: {"model": :record},
+                container_class: Trailblazer::Context::Container::WithAliases,
+              }
+            },
+
+            **runtime_call_keywords, # {:invoke_method}
+          }
+        end
+
+      end.new
+
+    signal, ctx = nil
+
+    # no tracing
+      stdout, _ = capture_io do
+        signal, (ctx,) = kernel.__(Create, self.ctx, enable_tracing: false)
+      end
+
+      assert_equal stdout, ""
+      assert_create_run(signal, ctx)
+
+    # tracing with {:enable_tracing}.
+      stdout, _ = capture_io do
+        signal, (ctx,) = kernel.__(Create, self.ctx, enable_tracing: true)
+      end
+
+      assert_equal stdout, create_trace
+      assert_create_run(signal, ctx)
+
+    # tracing by __?
+      stdout, _ = capture_io do
+        signal, (ctx,) = kernel.__?(Create, self.ctx, enable_tracing: false) # DISCUSS: __? still overrides {:enable_tracing}.
+      end
+
+      assert_equal stdout, create_trace
+      assert_create_run(signal, ctx)
+    end
+
+    def assert_create_run(signal, ctx)
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal ctx[:model], Object
+      assert_equal ctx[:record], Object
+      assert_equal ctx.keys, [:seq, :model, :record]
+    end
+  end
 end
