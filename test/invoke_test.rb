@@ -1,11 +1,10 @@
 require "test_helper"
 
-# This tests {Runtime.call}, the top-level entry point for end users.
-class RuntimeTest < Minitest::Spec
+# This tests {Invoke.call}, the top-level entry point for end users.
+class InvokeTest < Minitest::Spec
   class Create < Trailblazer::Activity::FastTrack
-    include T.def_steps(:model)
-
     step :model
+    include T.def_steps(:model)
   end
 
   def render(content)
@@ -63,37 +62,7 @@ class RuntimeTest < Minitest::Spec
   end
 
 
-  it "Activity can be invoked via {TopLevel#__()}" do
-    kernel = Class.new do
-      include Trailblazer::Invoke::TopLevel
 
-      def __(operation, ctx, flow_options: FLOW_OPTIONS, **, &block)
-        super
-      end
-
-      FLOW_OPTIONS = {
-        context_options: {
-          aliases: {"model": :record},
-          container_class: Trailblazer::Context::Container::WithAliases,
-        }
-      }
-    end
-
-    signal, (ctx,) = kernel.new.__(Create, self.ctx) # FLOW_OPTIONS are applied!
-
-    assert_equal ctx[:record], Object
-
-    stdout, _ = capture_io do
-      signal, (ctx,) = kernel.new.__?(Create, self.ctx) # FLOW_OPTIONS are applied!
-    end
-
-    assert_equal ctx[:record], Object
-    assert_equal stdout, %(RuntimeTest::Create
-|-- \e[32mStart.default\e[0m
-|-- \e[32mmodel\e[0m
-`-- End.success
-)
-  end
 
 
 
@@ -102,7 +71,7 @@ class RuntimeTest < Minitest::Spec
   it "using {Runtime::Matcher.call} without a Protocol" do
     ctx = {seq: [], model: Object}
 
-    Trailblazer::Invoke::Matcher.(Create, ctx, default_matcher: {}, matcher_context: self) do
+    Trailblazer::Invoke::WithMatcher.(Create, ctx, default_matcher: {}, matcher_context: self) do
       success { |ctx, model:, **| render model.inspect }
     end
 
@@ -129,9 +98,6 @@ class ProtocolTest < Minitest::Spec
     step :save
   end
 
-  class Protocol < Trailblazer::Activity::Railway
-    include T.def_steps(:authenticate, :policy)
-  end
 
   it "{Runtime::Matcher.call} matcher block" do
     default_matcher = {
@@ -140,8 +106,15 @@ class ProtocolTest < Minitest::Spec
       not_authorized: ->(*) { snippet },
     }
 
-    action_protocol = Trailblazer::Endpoint.build(protocol: Protocol, domain_activity: Create, protocol_block: ->(*) { {Output(:not_found) => Track(:not_found)} })
-    # action_adapter  = Trailblazer::Endpoint::Adapter.build(action_protocol) # build the simplest Adapter we got.
+    action_protocol = Class.new(Trailblazer::Activity::Railway) do
+      terminus :not_authorized
+      terminus :not_authenticated
+      terminus :not_found
+      step :authenticate, Output(:failure) => End(:not_authenticated)
+      step :policy, Output(:failure) => End(:not_authorized)
+      step Subprocess(Create), Output(:not_found) => Track(:not_found)
+      include T.def_steps(:authenticate, :policy)
+    end
 
     # this is usually in a controller action.
     matcher_block = Proc.new do
@@ -152,28 +125,28 @@ class ProtocolTest < Minitest::Spec
 
     ctx = {seq: [], model: {id: 1}}
 
-    Trailblazer::Invoke::Matcher.(action_protocol, ctx, default_matcher: default_matcher, matcher_context: self, &matcher_block)
+    Trailblazer::Invoke::WithMatcher.(action_protocol, ctx, default_matcher: default_matcher, matcher_context: self, &matcher_block)
     assert_equal @rendered, %(Object)
 
     ctx = {seq: [], model: {id: 1}}
 
-    Trailblazer::Invoke::Matcher.(action_protocol, ctx.merge(model: false), default_matcher: default_matcher, matcher_context: self, &matcher_block)
+    Trailblazer::Invoke::WithMatcher.(action_protocol, ctx.merge(model: false), default_matcher: default_matcher, matcher_context: self, &matcher_block)
     assert_equal @rendered, %(404, false not found)
 
     ctx = {seq: [], model: {id: 1}}
 
-    Trailblazer::Invoke::Matcher.(action_protocol, ctx.merge(save: false), default_matcher: default_matcher, matcher_context: self, &matcher_block)
+    Trailblazer::Invoke::WithMatcher.(action_protocol, ctx.merge(save: false), default_matcher: default_matcher, matcher_context: self, &matcher_block)
     assert_equal @rendered, %(failure)
 
     ctx = {seq: [], model: {id: 1}}
 
-    Trailblazer::Invoke::Matcher.(action_protocol, ctx.merge(policy: false), default_matcher: default_matcher, matcher_context: self, &matcher_block)
+    Trailblazer::Invoke::WithMatcher.(action_protocol, ctx.merge(policy: false), default_matcher: default_matcher, matcher_context: self, &matcher_block)
     assert_equal @rendered, %(not authorized: {:id=>1})
 
     ctx = {seq: [], model: {id: 1}}
 
     assert_raises KeyError do
-      Trailblazer::Invoke::Matcher.(action_protocol, ctx.merge(authenticate: false), default_matcher: default_matcher, matcher_context: self, &matcher_block)
+      Trailblazer::Invoke::WithMatcher.(action_protocol, ctx.merge(authenticate: false), default_matcher: default_matcher, matcher_context: self, &matcher_block)
       # assert_equal @rendered, %(404, false not found)
     end
 
@@ -187,7 +160,7 @@ class ProtocolTest < Minitest::Spec
     #   render model.inspect
     # end
 
-    # Trailblazer::Invoke::Matcher.call ctx, adapter: action_adapter do
+    # Trailblazer::Invoke::WithMatcher.call ctx, adapter: action_adapter do
     #   success { |ctx, model:, **| render model.inspect }
     #   failure { |*| render "failure" }
     #   not_authorized { |ctx, model:, **| render "not authorized: #{model}" }
@@ -195,9 +168,6 @@ class ProtocolTest < Minitest::Spec
   end
 
   it "returns a {Trailblazer::Context}, and allows {flow_options}" do
-    action_protocol = Trailblazer::Endpoint.build(protocol: Protocol, domain_activity: Create)
-    # action_adapter  = Trailblazer::Endpoint::Adapter.build(action_protocol) # build the simplest Adapter we got.
-
     ctx = {seq: [], model: {id: 1}} # ordinary hash.
 
     flow_options_with_aliasing = {
@@ -207,12 +177,12 @@ class ProtocolTest < Minitest::Spec
       }
     }
 
-    signal, ((ctx, flow_options), circuit_options) = Trailblazer::Invoke::Matcher.(action_protocol, ctx, default_matcher: default_matcher, matcher_context: self, flow_options: flow_options_with_aliasing, &matcher_block)
+    signal, ((ctx, flow_options), circuit_options) = Trailblazer::Invoke::WithMatcher.(Create, ctx, default_matcher: default_matcher, matcher_context: self, flow_options: flow_options_with_aliasing, &matcher_block)
 
     assert_equal ctx.class, Trailblazer::Context::Container::WithAliases
     # assert_equal ctx.inspect, %(#<Trailblazer::Context::Container wrapped_options={:seq=>[:authenticate, :policy, :save], :model=>{:id=>1}} mutable_options={:model=>Object}>)
     assert_equal ctx.keys.inspect, %([:seq, :model, :object])
-    assert_equal ctx[:seq].inspect, %([:authenticate, :policy, :save])
+    assert_equal ctx[:seq].inspect, %([:save])
     assert_equal ctx[:model].inspect, %(Object)
     assert_equal ctx[:object].inspect, %(Object)
   end
@@ -231,7 +201,7 @@ class ProtocolTest < Minitest::Spec
     end
 
     # ctx doesn't contain {:model}, yet.
-    Trailblazer::Invoke::Matcher.(protocol,  {}, flow_options: {model: Object}, default_matcher: default_matcher, matcher_context: self, &matcher_block)
+    Trailblazer::Invoke::WithMatcher.(protocol,  {}, flow_options: {model: Object}, default_matcher: default_matcher, matcher_context: self, &matcher_block)
     assert_equal @rendered, %(Object)
   end
 
@@ -267,7 +237,7 @@ class ProtocolTest < Minitest::Spec
   it "Matcher.() allows other keyword arguments such as {:invoke_method}" do
     # ctx doesn't contain {:model}, yet.
     stdout, _ = capture_io do
-      Trailblazer::Invoke::Matcher.(Create, {seq: []}, invoke_method: Trailblazer::Developer::Wtf.method(:invoke), default_matcher: default_matcher, matcher_context: self, &matcher_block)
+      Trailblazer::Invoke::WithMatcher.(Create, {seq: []}, invoke_method: Trailblazer::Developer::Wtf.method(:invoke), default_matcher: default_matcher, matcher_context: self, &matcher_block)
     end
 
     assert_equal @rendered, %(Object)

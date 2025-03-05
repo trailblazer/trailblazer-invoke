@@ -1,4 +1,5 @@
 require_relative "invoke/version"
+require "trailblazer/invoke/matcher"
 
 module Trailblazer
   module Invoke
@@ -46,12 +47,12 @@ module Trailblazer
     # @public
     # Top-level entry point.
     def call(activity, ctx, default_matcher: {}, matcher_context: self, **options, &block)
-      return Invoke::Invoke.(activity, ctx, **options) unless block_given?
+      return Call.(activity, ctx, **options) unless block_given?
 
       WithMatcher.(activity, ctx, default_matcher: default_matcher, matcher_context: matcher_context, **options, &block)
     end
 
-    module Invoke
+    module Call
       module_function
 
       # We run the Adapter here, which in turn will run your business operation, then the matcher
@@ -106,4 +107,3 @@ module Trailblazer
   end
 end
 
-require "trailblazer/invoke/matcher"
