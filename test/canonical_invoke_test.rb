@@ -155,6 +155,48 @@ class CanonicalInvokeTest < Minitest::Spec
     end
   end
 
+  RENDER = nil
+
+  describe "with matcher interface" do
+    it "{#__} accepts a block/matcher and defaults :matcher_context and :default_matcher" do
+      kernel = Class.new do
+        Trailblazer::Invoke.module!(self) do |*|
+          {
+            invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
+          }
+        end
+      end.new
+
+      signal, ctx = nil
+
+    # success
+      stdout, _ = capture_io do
+        signal, (ctx, flow_options) = kernel.__(Create, self.ctx) do
+          success { |ctx, model:, **| CanonicalInvokeTest::RENDER = model.inspect }
+        end
+      end
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal stdout, create_trace
+      assert_equal CanonicalInvokeTest::RENDER, %(Object)
+
+    # failure
+      stdout, _ = capture_io do
+        signal, (ctx, flow_options) = kernel.__(Create, {model: false, seq: []}) do
+          failure { |ctx, model:, **| CanonicalInvokeTest::RENDER = model.inspect + " failed" }
+        end
+      end
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:failure>)
+      assert_equal stdout, %(CanonicalInvokeTest::Create
+|-- \e[32mStart.default\e[0m
+|-- \e[33mmodel\e[0m
+`-- End.failure
+)
+      assert_equal CanonicalInvokeTest::RENDER, %(false failed)
+    end
+  end
+
   def assert_create_run(signal, ctx)
     assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
     assert_equal ctx[:model], Object
