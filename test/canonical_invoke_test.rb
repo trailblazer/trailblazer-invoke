@@ -53,19 +53,13 @@ class CanonicalInvokeTest < Minitest::Spec
 
       signal, (ctx,) = kernel.__(Create, self.ctx, flow_options: _FLOW_OPTIONS)
 
-      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
-      assert_equal ctx[:model], Object
-      assert_equal ctx[:record], Object
-      assert_equal ctx.keys, [:seq, :model, :record]
+      assert_create_run(signal, ctx)
 
       stdout, _ = capture_io do
         signal, (ctx,) = kernel.__?(Create, self.ctx, flow_options: _FLOW_OPTIONS)
       end
 
-      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
-      assert_equal ctx[:model], Object
-      assert_equal ctx[:record], Object
-      assert_equal ctx.keys, [:seq, :model, :record]
+      assert_create_run(signal, ctx)
       assert_equal stdout, create_trace
     end
   end
@@ -159,12 +153,12 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal stdout, %(Trailblazer::Developer::Wtf::Renderer\n)
     end
+  end
 
-    def assert_create_run(signal, ctx)
-      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
-      assert_equal ctx[:model], Object
-      assert_equal ctx[:record], Object
-      assert_equal ctx.keys, [:seq, :model, :record]
-    end
+  def assert_create_run(signal, ctx)
+    assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+    assert_equal ctx[:model], Object
+    assert_equal ctx[:record], Object
+    assert_equal ctx.keys, [:seq, :model, :record]
   end
 end
