@@ -26,12 +26,15 @@ class CanonicalInvokeTest < Minitest::Spec
       Class.new { Trailblazer::Invoke.module!(self) }.new
     }
 
-    it "calls the activity" do
+    it "calls the activity, and returns original resultset" do
       signal, (ctx,) = kernel.__(Create, self.ctx)
 
+      assert_equal ctx.class, Trailblazer::Context::Container#::WithAliases
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
+
+      # TODO: test flow_options
 
       stdout, _ = capture_io do
         signal, (ctx,) = kernel.__?(Create, self.ctx)
@@ -53,6 +56,7 @@ class CanonicalInvokeTest < Minitest::Spec
 
       signal, (ctx,) = kernel.__(Create, self.ctx, flow_options: _FLOW_OPTIONS)
 
+      assert_equal ctx.class, Trailblazer::Context::Container::WithAliases
       assert_create_run(signal, ctx)
 
       stdout, _ = capture_io do
@@ -158,15 +162,17 @@ class CanonicalInvokeTest < Minitest::Spec
   RENDER = nil
 
   describe "with matcher interface" do
-    it "{#__} accepts a block/matcher and defaults :matcher_context and :default_matcher" do
-      kernel = Class.new do
+    let(:kernel) do
+      Class.new do
         Trailblazer::Invoke.module!(self) do |*|
           {
             invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
           }
         end
       end.new
+    end
 
+    it "{#__} accepts a block/matcher and defaults :matcher_context and :default_matcher" do
       signal, ctx = nil
 
     # success
@@ -194,6 +200,26 @@ class CanonicalInvokeTest < Minitest::Spec
 `-- End.failure
 )
       assert_equal CanonicalInvokeTest::RENDER, %(false failed)
+    end
+
+    it "accepts {:default_matcher} and {:matcher_context}" do
+      default_matcher = {failure: ->(ctx, model:, **) { @render = model.inspect + " failed" }}
+
+    # success
+      signal, (ctx, flow_options) = kernel.__(Create, self.ctx, matcher_context: self, default_matcher: default_matcher) do
+        success { |ctx, model:, **| @render = model.inspect }
+      end
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal @render, %(Object)
+
+    # failure
+      signal, (ctx, flow_options) = kernel.__(Create, {model: false, seq: []}, matcher_context: self, default_matcher: default_matcher) do
+        success { |ctx, model:, **| @render = model.inspect }
+      end
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:failure>)
+      assert_equal @render, %(false failed)
     end
   end
 
