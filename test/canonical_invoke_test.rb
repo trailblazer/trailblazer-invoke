@@ -83,13 +83,12 @@ class CanonicalInvokeTest < Minitest::Spec
               context_options: {
                 aliases: {"model": :record},
                 container_class: Trailblazer::Context::Container::WithAliases,
-              }
+              },
             },
 
             **runtime_call_keywords, # {:invoke_method}
           }
         end
-
       end.new
 
     signal, ctx = nil
@@ -117,6 +116,25 @@ class CanonicalInvokeTest < Minitest::Spec
 
       assert_equal stdout, create_trace
       assert_create_run(signal, ctx)
+    end
+
+    it "block receives activity, options and arbitrary keywords" do
+      kernel = Class.new do
+        Trailblazer::Invoke.module!(self) do |activity, options, **kws|
+          {
+            flow_options: {
+              arguments_we_can_see: [activity, options.inspect, kws.inspect],
+            },
+          }
+        end
+      end.new
+
+      signal, (ctx, flow_options) = kernel.__(Create, self.ctx, enable_tracing: false)
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal ctx[:model], Object
+      assert_equal ctx[:record], nil
+      assert_equal flow_options[:arguments_we_can_see], [CanonicalInvokeTest::Create, "{:seq=>[], :model=>Object}", "{:enable_tracing=>false}"]
     end
 
     def assert_create_run(signal, ctx)
