@@ -21,6 +21,7 @@ GEM
       trailblazer-declarative (>= 0.0.1, < 0.1.0)
     trailblazer-context (0.5.1)
       hashie (>= 3.0.0)
+    trailblazer-core-utils (0.0.4)
     trailblazer-declarative (0.0.2)
     trailblazer-developer (0.1.0)
       hirb
@@ -34,6 +35,7 @@ DEPENDENCIES
   minitest (~> 5.0)
   minitest-line
   rake (~> 13.0)
+  trailblazer-core-utils
   trailblazer-developer
   trailblazer-invoke!
 

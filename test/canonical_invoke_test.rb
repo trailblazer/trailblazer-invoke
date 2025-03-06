@@ -29,8 +29,8 @@ class CanonicalInvokeTest < Minitest::Spec
     it "calls the activity, and returns original resultset" do
       signal, (ctx,) = kernel.__(Create, self.ctx)
 
-      assert_equal ctx.class, Trailblazer::Context::Container#::WithAliases
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal ctx.class, Trailblazer::Context::Container#::WithAliases
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
 
@@ -41,6 +41,7 @@ class CanonicalInvokeTest < Minitest::Spec
       end
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal ctx.class, Trailblazer::Context::Container#::WithAliases
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
       assert_equal stdout, create_trace
