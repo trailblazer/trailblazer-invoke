@@ -137,6 +137,29 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal flow_options[:arguments_we_can_see], [CanonicalInvokeTest::Create, "{:seq=>[], :model=>Object}", "{:enable_tracing=>false}"]
     end
 
+    it "we can set {:circuit_options}" do
+      kernel = Class.new do
+        Trailblazer::Invoke.module!(self) do |*|
+          {
+            invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
+
+            circuit_options: {
+              present_options: {render_method: ->(renderer:, **) { renderer.inspect }}
+            },
+          }
+        end
+      end.new
+
+      signal, ctx = nil
+
+      stdout, _ = capture_io do
+        signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
+      end
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal stdout, %(Trailblazer::Developer::Wtf::Renderer\n)
+    end
+
     def assert_create_run(signal, ctx)
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx[:model], Object
