@@ -6,10 +6,7 @@ module Trailblazer
     def self.module!(target, canonical_invoke_name: :__, canonical_wtf_name: "#{canonical_invoke_name}?", &arguments_block)
       arguments_block = ->(*) { {} } unless block_given?
 
-      target.include(Canonical) # #__
-
       # DISCUSS: store arguments_block in a class instance variable and refrain from using {define_method}?
-
       target.define_method(canonical_invoke_name) do |*args, **kws, &block|
         Canonical.__(*args, my_dynamic_arguments: arguments_block, **kws, &block)
       end
