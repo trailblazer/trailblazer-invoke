@@ -64,20 +64,18 @@ module Trailblazer
       # This method is basically replacing {Operation.call_with_public_interface}, from a logic perspective.
       #
       # NOTE: {:invoke_method} is *not* activity API, that's us here using it.
-      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, **, &block) # TODO: test {flow_options} # TODO: test {invoke_method}
+      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, **, &block) # TODO: test {flow_options}
         # Instead of creating the {ctx} manually, use an In() filter for the outermost activity.
         # Currently, the interface is a bit awkward, but we're going to fix this.
         in_extension = Class.new(Activity::Railway) do
           step :a, In() => ->(ctx, **) { ctx } # wrap hash into Trailblazer::Context, super awkward
         end.to_h[:config][:wrap_static].values.first.to_a[0..1] # no Out() extension. FIXME: maybe I/O should have some semi-private API for that?
 
-        pipeline = Activity::TaskWrap::Pipeline.new(in_extension + extensions) # DISCUSS: how and where to run the matcher, especially with an protocol.
+        pipeline = Activity::TaskWrap::Pipeline.new(in_extension + extensions)
 
         container_activity = Activity::TaskWrap.container_activity_for(activity, wrap_static: pipeline)
 
-# invoke_method = Trailblazer::Developer::Wtf.method(:invoke)
         invoke_method.( # FIXME: run Advance using this, not its own wtf?/call invocation.
-        # Trailblazer::Developer.wtf?( # FIXME: run Advance using this, not its own wtf?/call invocation.
           activity,
           [
             ctx,
