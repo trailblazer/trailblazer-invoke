@@ -67,6 +67,26 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_create_run(signal, ctx)
       assert_equal stdout, create_trace
     end
+
+    it "{#__} accepts {:initial_wrap_static} option" do
+      def my_call_task(wrap_ctx, original_args)
+        # original_args[0][0][:i_was_here] = true
+
+        wrap_ctx[:return_signal] = Object
+        wrap_ctx[:return_args] = {i_was_here: true}
+
+        return wrap_ctx, original_args
+      end
+
+      my_wrap_static = [
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("task_wrap.call_task", method(:my_call_task))
+      ]
+
+      signal, (ctx,) = kernel.__(Create, self.ctx, initial_wrap_static: my_wrap_static)
+
+      assert_equal signal, Object
+      assert_equal CU.inspect(ctx), %({:i_was_here=>true})
+    end
   end
 
   describe "module!(self) with dynamic args" do
