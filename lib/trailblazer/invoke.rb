@@ -65,7 +65,7 @@ module Trailblazer
       #
       # NOTE: {:invoke_method} is *not* activity API, that's us here using it.
       def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, initial_wrap_static: Invoke::INITIAL_WRAP_STATIC, **, &block) # TODO: test {flow_options}
-        pipeline = Activity::TaskWrap::Pipeline.new(initial_wrap_static + extensions) # DISCUSS: do we need {:extensions}?
+        pipeline = Activity::TaskWrap::Pipeline.new(initial_wrap_static + extensions)
 
         container_activity = Activity::TaskWrap.container_activity_for(activity, wrap_static: pipeline)
 
