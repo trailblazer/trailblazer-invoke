@@ -180,8 +180,6 @@ class CanonicalInvokeTest < Minitest::Spec
     end
   end
 
-  RENDER = nil
-
   describe "with matcher interface" do
     let(:kernel) do
       Class.new do
@@ -193,24 +191,25 @@ class CanonicalInvokeTest < Minitest::Spec
       end.new
     end
 
-    it "{#__} accepts a block/matcher and defaults :matcher_context and :default_matcher" do
+    it "{#__} accepts a block/matcher and doesn't (unfortunately) exec block in its original context, and provides a {:default_matcher}" do
       signal, ctx = nil
 
     # success
       stdout, _ = capture_io do
         signal, (ctx, flow_options) = kernel.__(Create, self.ctx) do
-          success { |ctx, model:, **| CanonicalInvokeTest::RENDER = model.inspect }
+          success { |ctx, model:, **| @render = model.inspect }
         end
       end
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal CU.inspect(ctx), %(#<Trailblazer::Context::Container wrapped_options={:seq=>[:model], :model=>Object} mutable_options={}>)
       assert_equal stdout, create_trace
-      assert_equal CanonicalInvokeTest::RENDER, %(Object)
+      assert_equal @render, nil # block executed in different context.
 
     # failure
       stdout, _ = capture_io do
         signal, (ctx, flow_options) = kernel.__(Create, {model: false, seq: []}) do
-          failure { |ctx, model:, **| CanonicalInvokeTest::RENDER = model.inspect + " failed" }
+          failure { |ctx, model:, **| @render = model.inspect + " failed" }
         end
       end
 
@@ -220,7 +219,7 @@ class CanonicalInvokeTest < Minitest::Spec
 |-- \e[33mmodel\e[0m
 `-- End.failure
 )
-      assert_equal CanonicalInvokeTest::RENDER, %(false failed)
+      assert_equal @render, nil
     end
 
     it "accepts {:default_matcher} and {:matcher_context}" do
