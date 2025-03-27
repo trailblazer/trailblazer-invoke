@@ -7,12 +7,12 @@ module Trailblazer
       arguments_block = ->(*) { {} } unless block_given?
 
       # DISCUSS: store arguments_block in a class instance variable and refrain from using {define_method}?
-      target.define_method(canonical_invoke_name) do |*args, **kws, &block|
-        Canonical.__(*args, my_dynamic_arguments: arguments_block, **kws, &block)
+      target.define_method(canonical_invoke_name) do |activity, options, **kws, &block|
+        Canonical.__(activity, options, my_dynamic_arguments: arguments_block, **kws, &block)
       end
 
-      target.define_method(canonical_wtf_name) do |*args, **kws, &block|
-        Canonical.__?(*args, my_dynamic_arguments: arguments_block, **kws, &block)
+      target.define_method(canonical_wtf_name) do |activity, options, **kws, &block|
+        Canonical.__?(activity, options, my_dynamic_arguments: arguments_block, **kws, &block)
       end
     end
 
