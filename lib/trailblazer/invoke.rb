@@ -91,14 +91,20 @@ module Trailblazer
       # Instead of creating the {ctx} manually, use an In() filter for the outermost activity.
       # Currently, the interface is a bit awkward, but we're going to fix this.
     # The "beginning" of the wrap_static pipeline for the top activity that's invoked.
-      in_extension_with_call_task = Class.new(Activity::Railway) do
-        step :a, In() => ->(ctx, **) { ctx } # wrap hash into Trailblazer::Context, super awkward
-      end.to_h[:config][:wrap_static].values.first.to_a[0..1] # no Out() extension. FIXME: maybe I/O should have some semi-private API for that?
+      top_level_activity = Class.new(Activity::Railway) do
+        # DISCUSS: let's use {Subprocess()} as a well-defined "hook" when building the taskWrap for the
+        # top-level activity.
+        step Subprocess(Activity::Railway),
+          In() => ->(ctx, **) { ctx } # wrap hash into Trailblazer::Context, super awkward.
+          # Inject(nil) => ->(*) {  } # FIXME: we should be using I/O's internal logic for the "default_ctx" here by making it think there are Inject()s even though most of the times, there aren't.
+      end
+
+      in_extension_with_call_task = top_level_activity.to_h[:config][:wrap_static].values.first.to_a[0..1] # no Out() extension. FIXME: maybe I/O should have some semi-private API for that?
 
       in_extension_with_call_task # [#<Extension In()>, #<Extension {call_task}>]
     end
 
-    INITIAL_WRAP_STATIC = initial_wrap_static()
+    INITIAL_WRAP_STATIC = initial_wrap_static() # DISCUSS: this should be done per Activity subclass so we can do Subprocess(activity).
 
     module WithMatcher # FIXME
       # module_function
@@ -116,4 +122,24 @@ module Trailblazer
     end # Invoke
   end
 end
+
+=begin
+1. less cool option, but also less changes:
+  pass Activity into initial_wrap_static(activity) in #__ which will compute the wrap_static for the actual activity at runtime
+  retrieve class dependency fields (in C.D. specific code by overriding Subprocess), build initial_wrap_static/variable mapping based on that
+2. every Activity::Strategy keeps its wrap_static in a class field.
+  C.D. could add to that at compile time
+  Subprocess would generically retrieve the nested's wrap_static
+  problem here is that mixing Inject() with an already compiled I/O pipe will need some work.
+
+where do we benefit from a Strategy.initial_wrap_static per subclass?
+  class dependencies
+  NOT for setting container path, because we need Subprocess :id for that from the containing activity
+
+goal
+  injecting deps per step, specific, even if we use multiple {:http} deps across one OP.
+  e.g.
+                          vvvv-step vvv-kwargs
+    memo.operation.create.validate.http = MockedHttp
+=end
 
