@@ -142,7 +142,7 @@ class CanonicalInvokeTest < Minitest::Spec
         Trailblazer::Invoke.module!(self) do |activity, options, **kws|
           {
             flow_options: {
-              arguments_we_can_see: [activity, options.inspect, kws.inspect],
+              arguments_we_can_see: [activity, CU.inspect(options), CU.inspect(kws)],
             },
           }
         end
@@ -202,7 +202,7 @@ class CanonicalInvokeTest < Minitest::Spec
       end
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
-      assert_equal CU.inspect(ctx), %(#<Trailblazer::Context::Container wrapped_options={:seq=>[:model], :model=>Object} mutable_options={}>)
+      assert_equal CU.inspect(ctx.inspect), %(#<Trailblazer::Context::Container wrapped_options={:seq=>[:model], :model=>Object} mutable_options={}>)
       assert_equal stdout, create_trace
       assert_equal @render, nil # block executed in different context.
 
