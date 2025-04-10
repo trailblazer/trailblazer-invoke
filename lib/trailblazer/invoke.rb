@@ -64,17 +64,14 @@ module Trailblazer
       # This method is basically replacing {Operation.call_with_public_interface}, from a logic perspective.
       #
       # NOTE: {:invoke_method} is *not* activity API, that's us here using it.
-      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, invoke_task_wrap: Invoke::INVOKE_TASK_WRAP, **, &block) # TODO: test {flow_options}
+      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, invoke_task_wrap: Invoke::INVOKE_TASK_WRAP,
+        task_wrap_for_activity: task_wrap_for_activity(activity), **, &block) # TODO: test {flow_options}
         # DISCUSS: we could also simply create a Trailblazer::Context here manually.
 
 
 
 
         # {invoke_task_wrap}: create a {Context}, maybe run a matcher.
-        # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
-        # task_wrap_for_activity = activity.instance_variable_get(:@state).get(:fields).fetch(:task_wrap)
-        task_wrap_for_activity = activity.to_h[:fields].fetch(:task_wrap)
-
         task_wrap = invoke_task_wrap + task_wrap_for_activity  + extensions # send our Invoke steps piggyback with the activity's tw.
 
           # this could also be achieved using Subprocess and the tw merging logic, but please not at runtime (for now).
@@ -96,7 +93,12 @@ module Trailblazer
         )
       end
 
-
+      def task_wrap_for_activity(activity)
+        # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
+        # task_wrap_for_activity = activity.instance_variable_get(:@state).get(:fields).fetch(:task_wrap)
+        _task_wrap_for_activity = activity.to_h[:fields].fetch(:task_wrap)
+          .to_a # FIXME: use either only Pipeline or only ary, prefer the latter.
+      end
     end
 
     require "trailblazer/activity/dsl/linear" # DISCUSS: do we want that here? where should we compile INVOKE_TASK_WRAP?

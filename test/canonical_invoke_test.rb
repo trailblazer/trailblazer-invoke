@@ -68,7 +68,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal stdout, create_trace
     end
 
-    it "{#__} accepts {:initial_wrap_static} option" do
+    it "{#__} accepts {:task_wrap_for_activity} option" do
       def my_call_task(wrap_ctx, original_args)
         # original_args[0][0][:i_was_here] = true
 
@@ -78,14 +78,31 @@ class CanonicalInvokeTest < Minitest::Spec
         return wrap_ctx, original_args
       end
 
-      my_wrap_static = [
+      my_task_wrap = [
         Trailblazer::Activity::TaskWrap::Pipeline.Row("task_wrap.call_task", method(:my_call_task))
       ]
 
-      signal, (ctx,) = kernel.__(Create, self.ctx, initial_wrap_static: my_wrap_static)
+      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_for_activity: my_task_wrap)
 
       assert_equal signal, Object
       assert_equal CU.inspect(ctx), %({:i_was_here=>true})
+    end
+
+    it "{#__} accepts {:invoke_task_wrap} option" do
+      def my_task_wrap_step(wrap_ctx, original_args)
+        original_args[0][0][:seq] << :i_was_here
+
+        return wrap_ctx, original_args
+      end
+
+      my_task_wrap = [
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my.step", method(:my_task_wrap_step)) # gets added before call_task from {Activity}.
+      ]
+
+      signal, (ctx,) = kernel.__(Create, self.ctx, invoke_task_wrap: my_task_wrap)
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal CU.inspect(ctx), %({:seq=>[:i_was_here, :model], :model=>Object})
     end
   end
 
