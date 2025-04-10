@@ -64,12 +64,22 @@ module Trailblazer
       # This method is basically replacing {Operation.call_with_public_interface}, from a logic perspective.
       #
       # NOTE: {:invoke_method} is *not* activity API, that's us here using it.
-      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, initial_wrap_static: Invoke::INITIAL_WRAP_STATIC, **, &block) # TODO: test {flow_options}
-        pipeline = Activity::TaskWrap::Pipeline.new(initial_wrap_static + extensions)
+      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, invoke_task_wrap: Invoke::INITIAL_WRAP_STATIC, **, &block) # TODO: test {flow_options}
+        # DISCUSS: we could also simply create a Trailblazer::Context here manually.
 
-        container_activity = Activity::TaskWrap.container_activity_for(activity, wrap_static: pipeline)
 
-        invoke_method.( # FIXME: run Advance using this, not its own wtf?/call invocation.
+
+
+        # {invoke_task_wrap}: create a {Context}, maybe run a matcher.
+        # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
+        task_wrap_for_activity = activity.instance_variable_get(:@state).get(:fields).fetch(:task_wrap)
+        task_wrap = invoke_task_wrap + task_wrap_for_activity  + extensions # send our Invoke steps piggyback with the activity's tw.
+          # this could also be achieved using Subprocess and the tw merging logic, but please not at runtime (for now).
+        task_wrap_pipeline = Activity::TaskWrap::Pipeline.new(task_wrap)
+
+        container_activity = Activity::TaskWrap.container_activity_for(activity, wrap_static: task_wrap_pipeline)
+
+        invoke_method.(
           activity,
           [
             ctx,
@@ -77,7 +87,7 @@ module Trailblazer
           ],
 
           container_activity: container_activity,
-          exec_context: self,
+          exec_context: nil,
           # wrap_runtime: {activity => ->(*) { snippet }} # TODO: use wrap_runtime once https://github.com/trailblazer/trailblazer-developer/issues/46 is fixed.
           **circuit_options
         )
@@ -88,6 +98,7 @@ module Trailblazer
 
     require "trailblazer/activity/dsl/linear" # DISCUSS: do we want that here? where should we compile INITIAL_WRAP_STATIC?
     def initial_wrap_static
+      # raise "use Subprocess to always retrieve initial_task_wrap, then add the custom Context() extension as the first element, then merge step options, then consider caching that via invoke."
       # Instead of creating the {ctx} manually, use an In() filter for the outermost activity.
       # Currently, the interface is a bit awkward, but we're going to fix this.
     # The "beginning" of the wrap_static pipeline for the top activity that's invoked.
@@ -99,9 +110,10 @@ module Trailblazer
           # Inject(nil) => ->(*) {  } # FIXME: we should be using I/O's internal logic for the "default_ctx" here by making it think there are Inject()s even though most of the times, there aren't.
       end
 
-      in_extension_with_call_task = top_level_activity.to_h[:config][:wrap_static].values.first.to_a[0..1] # no Out() extension. FIXME: maybe I/O should have some semi-private API for that?
+      # in_extension_with_call_task = top_level_activity.to_h[:config][:wrap_static].values.first.to_a[0..1] # no Out() extension. FIXME: maybe I/O should have some semi-private API for that?
+      in_extension_without_call_task = top_level_activity.to_h[:config][:wrap_static].values.first.to_a[0..0] # Only In(), FIXME: add input pipeline using low-level API.
 
-      in_extension_with_call_task # [#<Extension In()>, #<Extension {call_task}>]
+      in_extension_without_call_task # [#<Extension In()>, #<Extension {call_task}>]
     end
 
     INITIAL_WRAP_STATIC = initial_wrap_static() # DISCUSS: this should be done per Activity subclass so we can do Subprocess(activity).
