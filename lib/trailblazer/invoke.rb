@@ -64,7 +64,7 @@ module Trailblazer
       # This method is basically replacing {Operation.call_with_public_interface}, from a logic perspective.
       #
       # NOTE: {:invoke_method} is *not* activity API, that's us here using it.
-      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, invoke_task_wrap: Invoke::INITIAL_WRAP_STATIC, **, &block) # TODO: test {flow_options}
+      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, invoke_task_wrap: Invoke::INVOKE_TASK_WRAP, **, &block) # TODO: test {flow_options}
         # DISCUSS: we could also simply create a Trailblazer::Context here manually.
 
 
@@ -72,8 +72,11 @@ module Trailblazer
 
         # {invoke_task_wrap}: create a {Context}, maybe run a matcher.
         # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
-        task_wrap_for_activity = activity.instance_variable_get(:@state).get(:fields).fetch(:task_wrap)
+        # task_wrap_for_activity = activity.instance_variable_get(:@state).get(:fields).fetch(:task_wrap)
+        task_wrap_for_activity = activity.to_h[:fields].fetch(:task_wrap)
+
         task_wrap = invoke_task_wrap + task_wrap_for_activity  + extensions # send our Invoke steps piggyback with the activity's tw.
+
           # this could also be achieved using Subprocess and the tw merging logic, but please not at runtime (for now).
         task_wrap_pipeline = Activity::TaskWrap::Pipeline.new(task_wrap)
 
@@ -96,8 +99,8 @@ module Trailblazer
 
     end
 
-    require "trailblazer/activity/dsl/linear" # DISCUSS: do we want that here? where should we compile INITIAL_WRAP_STATIC?
-    def initial_wrap_static
+    require "trailblazer/activity/dsl/linear" # DISCUSS: do we want that here? where should we compile INVOKE_TASK_WRAP?
+    def invoke_task_wrap
       # raise "use Subprocess to always retrieve initial_task_wrap, then add the custom Context() extension as the first element, then merge step options, then consider caching that via invoke."
       # Instead of creating the {ctx} manually, use an In() filter for the outermost activity.
       # Currently, the interface is a bit awkward, but we're going to fix this.
@@ -111,12 +114,12 @@ module Trailblazer
       end
 
       # in_extension_with_call_task = top_level_activity.to_h[:config][:wrap_static].values.first.to_a[0..1] # no Out() extension. FIXME: maybe I/O should have some semi-private API for that?
-      in_extension_without_call_task = top_level_activity.to_h[:config][:wrap_static].values.first.to_a[0..0] # Only In(), FIXME: add input pipeline using low-level API.
+      in_extension_without_call_task = top_level_activity.to_h[:config][:wrap_static][Activity::Railway].to_a[0..0] # Only In(), FIXME: add input pipeline using low-level API.
 
       in_extension_without_call_task # [#<Extension In()>, #<Extension {call_task}>]
     end
 
-    INITIAL_WRAP_STATIC = initial_wrap_static() # DISCUSS: this should be done per Activity subclass so we can do Subprocess(activity).
+    INVOKE_TASK_WRAP = invoke_task_wrap() # DISCUSS: this should be done per Activity subclass so we can do Subprocess(activity).
 
     module WithMatcher # FIXME
       # module_function
@@ -137,14 +140,14 @@ end
 
 =begin
 1. less cool option, but also less changes:
-  pass Activity into initial_wrap_static(activity) in #__ which will compute the wrap_static for the actual activity at runtime
-  retrieve class dependency fields (in C.D. specific code by overriding Subprocess), build initial_wrap_static/variable mapping based on that
+  pass Activity into invoke_task_wrap(activity) in #__ which will compute the wrap_static for the actual activity at runtime
+  retrieve class dependency fields (in C.D. specific code by overriding Subprocess), build invoke_task_wrap/variable mapping based on that
 2. every Activity::Strategy keeps its wrap_static in a class field.
   C.D. could add to that at compile time
   Subprocess would generically retrieve the nested's wrap_static
   problem here is that mixing Inject() with an already compiled I/O pipe will need some work.
 
-where do we benefit from a Strategy.initial_wrap_static per subclass?
+where do we benefit from a Strategy.invoke_task_wrap per subclass?
   class dependencies
   NOT for setting container path, because we need Subprocess :id for that from the containing activity
 
