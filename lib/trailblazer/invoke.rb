@@ -72,7 +72,7 @@ module Trailblazer
 
 
         # {invoke_task_wrap}: create a {Context}, maybe run a matcher.
-        task_wrap = invoke_task_wrap + task_wrap_for_activity  + extensions # send our Invoke steps piggyback with the activity's tw.
+        task_wrap = invoke_task_wrap + task_wrap_for_activity.to_a  + extensions # send our Invoke steps piggyback with the activity's tw.
 
           # this could also be achieved using Subprocess and the tw merging logic, but please not at runtime (for now).
         task_wrap_pipeline = Activity::TaskWrap::Pipeline.new(task_wrap)
@@ -95,9 +95,8 @@ module Trailblazer
 
       def task_wrap_for_activity(activity)
         # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
-        # task_wrap_for_activity = activity.instance_variable_get(:@state).get(:fields).fetch(:task_wrap)
-        _task_wrap_for_activity = activity.to_h[:fields].fetch(:task_wrap)
-          .to_a # FIXME: use either only Pipeline or only ary, prefer the latter.
+        # Subprocess(activity), subprocess: true
+        _initial_task_wrap = Activity::DSL::Linear::Normalizer::TaskWrap.compile_initial_task_wrap({task: activity}, subprocess: true, task: activity)
       end
     end
 
