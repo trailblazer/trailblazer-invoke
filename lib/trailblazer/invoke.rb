@@ -77,7 +77,7 @@ module Trailblazer
 
         pipeline = Activity::DSL::Linear::Normalizer::TaskWrap.compile_task_wrap_from_extensions({task: activity, **options},
 
-          task_wrap: [], extensions: extensions, initial_task_wrap_adds: task_wrap_extensions_for_activity)
+          task_wrap: [], extensions: extensions, initial_task_wrap_extensions: task_wrap_extensions_for_activity)
         # pipeline  = DSL.pipe_for_composable_input(**options)  # FIXME: rename filters consistently
         # input     = Pipe::Input.new(pipeline)
 

@@ -105,9 +105,9 @@ class CanonicalInvokeTest < Minitest::Spec
         ext = method(:adds_instruction)
 
         @state.update!(:fields) do |fields|
-          exts = fields[:normalizer_task_wrap_extensions] # [call_task]
+          exts = fields[:task_wrap_extensions] # [call_task]
           exts = exts + [ext]
-          fields.merge(normalizer_task_wrap_extensions: exts)
+          fields.merge(task_wrap_extensions: exts)
         end
       end
 
