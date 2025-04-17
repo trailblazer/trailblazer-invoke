@@ -7,10 +7,6 @@ module Trailblazer
         exec_context.instance_exec(ctx, **kwargs, &block)
       end
 
-      def self.Extension
-        Activity::TaskWrap::Pipeline.Row("endpoint.run_matcher", method(:run_matcher)) # TODO: I don't like using this super low-level TW interface.
-      end
-
       # TaskWrap extension that's run after the {domain_activity}. This used to sit in the Adapter,
       # but for simplicity reasons we removed Adapter for the evaluation release time.
       def self.run_matcher(wrap_ctx, original_args)
@@ -25,6 +21,15 @@ module Trailblazer
 
         return [wrap_ctx, original_args]
       end
+
+      # Adds instruction to add {#run_matcher} to the end of the invoke taskWrap.
+      NORMALIZER_TASK_WRAP_EXTENSION = Activity::TaskWrap.Extension(
+        [
+          method(:run_matcher),
+          id: "invoke.run_matcher",
+          append: nil
+        ]
+      )
 
       # Object that collects user blocks to handle various outcomes.
       class DSL < Struct.new(:blocks)

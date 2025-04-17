@@ -1,4 +1,5 @@
 require_relative "invoke/version"
+require "trailblazer/activity/dsl/linear"
 require "trailblazer/invoke/matcher"
 
 module Trailblazer
@@ -64,15 +65,26 @@ module Trailblazer
       # This method is basically replacing {Operation.call_with_public_interface}, from a logic perspective.
       #
       # NOTE: {:invoke_method} is *not* activity API, that's us here using it.
-      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, invoke_task_wrap: Invoke::INVOKE_TASK_WRAP,
-        task_wrap_for_activity: task_wrap_for_activity(activity), **, &block) # TODO: test {flow_options}
+      #
+      # TODO:
+      # @param :task_wrap_for_activity
+      # @param
+      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, invoke_task_wrap: Invoke::INVOKE_TASK_WRAP, **options, &block) # TODO: test {flow_options}
         # DISCUSS: we could also simply create a Trailblazer::Context here manually.
-
-
-
+        task_wrap_extensions_for_activity = task_wrap_extensions_for_activity_for(activity, **options)
 
         # {invoke_task_wrap}: create a {Context}, maybe run a matcher.
-        task_wrap = invoke_task_wrap + task_wrap_for_activity.to_a  + extensions # send our Invoke steps piggyback with the activity's tw.
+
+        pipeline = Activity::DSL::Linear::Normalizer::TaskWrap.compile_task_wrap_from_extensions({task: activity,
+          **options},# FIXME: test that **options is passed to {normalizer_task_wrap_extensions.()}
+
+          task_wrap: [], extensions: extensions, initial_task_wrap_adds: task_wrap_extensions_for_activity)
+# raise pipeline.to_a.inspect
+        # pipeline  = DSL.pipe_for_composable_input(**options)  # FIXME: rename filters consistently
+        # input     = Pipe::Input.new(pipeline)
+
+
+        task_wrap = invoke_task_wrap + pipeline.to_a # send our Invoke steps piggyback with the activity's tw.
 
           # this could also be achieved using Subprocess and the tw merging logic, but please not at runtime (for now).
         task_wrap_pipeline = Activity::TaskWrap::Pipeline.new(task_wrap)
@@ -93,10 +105,13 @@ module Trailblazer
         )
       end
 
-      def task_wrap_for_activity(activity)
+      # Basically, fetch `activity{:task_wrap_extensions}` and compile it.
+      def task_wrap_extensions_for_activity_for(activity, task_wrap_extensions_for_activity: nil, **options)
+        return task_wrap_extensions_for_activity if task_wrap_extensions_for_activity
+
         # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
         # Subprocess(activity), subprocess: true
-        _initial_task_wrap = Activity::DSL::Linear::Normalizer::TaskWrap.compile_initial_task_wrap({task: activity}, subprocess: true, task: activity)
+        _initial_task_wrap_extensions = Activity::DSL::Linear::Normalizer::TaskWrap.compile_initial_task_wrap({task: activity, **options}, subprocess: true, task: activity) # FIXME: test {**options}
       end
     end
 
@@ -117,7 +132,7 @@ module Trailblazer
       # in_extension_with_call_task = top_level_activity.to_h[:config][:wrap_static].values.first.to_a[0..1] # no Out() extension. FIXME: maybe I/O should have some semi-private API for that?
       in_extension_without_call_task = top_level_activity.to_h[:config][:wrap_static][Activity::Railway].to_a[0..0] # Only In(), FIXME: add input pipeline using low-level API.
 
-      in_extension_without_call_task # [#<Extension In()>, #<Extension {call_task}>]
+      in_extension_without_call_task # [#<Extension In()>]
     end
 
     INVOKE_TASK_WRAP = invoke_task_wrap() # DISCUSS: this should be done per Activity subclass so we can do Subprocess(activity).
@@ -126,14 +141,14 @@ module Trailblazer
       # module_function
 
       # Adds the matcher logic to invoking an activity via an "endpoint" (actually, this is not related to endpoints at all).
-      def self.call(activity, ctx, flow_options: {}, matcher_context:, default_matcher:, matcher_extension: Matcher.Extension(), **kws, &block)
+      def self.call(activity, ctx, flow_options: {}, matcher_context:, default_matcher:, matcher_extension: Matcher::NORMALIZER_TASK_WRAP_EXTENSION, extensions: [], **kws, &block)
         matcher = Matcher::DSL.new.instance_exec(&block)
 
         matcher_value = Matcher::Value.new(default_matcher, matcher, matcher_context)
 
         flow_options = flow_options.merge(matcher_value: matcher_value) # matchers will be executed in Adapter's taskWrap.
 
-        Call.(activity, ctx, flow_options: flow_options, extensions: [matcher_extension], **kws) # TODO: we *might* be overriding {:extensions} here.
+        Call.(activity, ctx, flow_options: flow_options, extensions: [*extensions, matcher_extension], **kws) # TODO: we *might* be overriding {:extensions} here.
       end
     end # Invoke
   end

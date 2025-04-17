@@ -68,7 +68,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal stdout, create_trace
     end
 
-    it "{#__} accepts {:task_wrap_for_activity} option" do
+    it "{#__} accepts {:task_wrap_extensions_for_activity} option" do
       def my_call_task(wrap_ctx, original_args)
         # original_args[0][0][:i_was_here] = true
 
@@ -78,11 +78,11 @@ class CanonicalInvokeTest < Minitest::Spec
         return wrap_ctx, original_args
       end
 
-      my_task_wrap = [
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("task_wrap.call_task", method(:my_call_task))
+      my_task_wrap_extensions = [
+        Trailblazer::Activity::TaskWrap::Extension([method(:my_call_task), id: "task_wrap.call_task", prepend: nil])
       ]
 
-      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_for_activity: my_task_wrap)
+      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_extensions_for_activity: my_task_wrap_extensions)
 
       assert_equal signal, Object
       assert_equal CU.inspect(ctx), %({:i_was_here=>true})
