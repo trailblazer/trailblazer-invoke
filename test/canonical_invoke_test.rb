@@ -88,6 +88,34 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal CU.inspect(ctx), %({:i_was_here=>true})
     end
 
+    it "{#__} grabs `activity{:task_wrap_extensions}` if not passed (see {:task_wrap_extensions_for_activity}) and passed invoke {**options} to the extensions" do
+      activity = Class.new(Trailblazer::Activity::Railway) do
+        # This usually happens in extensions such as {trailblazer-dependency}.
+        def self.adds_instruction(task_wrap, id: nil, **)
+          Trailblazer::Activity::TaskWrap::Extension(
+          # Return an ADDS instruction.
+            [
+              ->(wrap_ctx, original_args) { original_args[0][0][:tw] = "hello from taskWrap #{id.inspect}"; return wrap_ctx, original_args },
+              id: "xxx",
+              prepend: nil
+            ]
+          ).(task_wrap)
+        end
+
+        ext = method(:adds_instruction)
+
+        @state.update!(:fields) do |fields|
+          exts = fields[:normalizer_task_wrap_extensions] # [call_task]
+          exts = exts + [ext]
+          fields.merge(normalizer_task_wrap_extensions: exts)
+        end
+      end
+
+      # We can inject options when using canonical invoke.
+      signal, (ctx, flow_options) = kernel.__(activity, {}, id: "tw ID xxx")
+      assert_equal CU.inspect(ctx.to_h), %({:tw=>\"hello from taskWrap \\\"tw ID xxx\\\"\"})
+    end
+
     it "{#__} accepts {:invoke_task_wrap} option" do
       def my_task_wrap_step(wrap_ctx, original_args)
         original_args[0][0][:seq] << :i_was_here
