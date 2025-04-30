@@ -70,19 +70,16 @@ module Trailblazer
       # @param :task_wrap_for_activity
       # @param
       def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, invoke_task_wrap: Invoke::INVOKE_TASK_WRAP, **options, &block) # TODO: test {flow_options}
+        # {invoke_task_wrap}: create a {Context}, maybe run a matcher.
+
         # DISCUSS: we could also simply create a Trailblazer::Context here manually.
         task_wrap_extensions_for_activity = task_wrap_extensions_for_activity_for(activity, **options)
 
-        # {invoke_task_wrap}: create a {Context}, maybe run a matcher.
-
-        pipeline = Activity::DSL::Linear::Normalizer::TaskWrap.compile_task_wrap_from_extensions({task: activity, **options},
-
-          task_wrap: [], extensions: extensions, initial_task_wrap_extensions: task_wrap_extensions_for_activity)
+        pipeline = Activity::DSL::Linear::Normalizer::TaskWrap.compile_task_wrap_ary_from_extensions(task_wrap_extensions_for_activity, extensions, {task: activity, **options})
         # pipeline  = DSL.pipe_for_composable_input(**options)  # FIXME: rename filters consistently
         # input     = Pipe::Input.new(pipeline)
 
-
-        task_wrap = invoke_task_wrap + pipeline.to_a # send our Invoke steps piggyback with the activity's tw.
+        task_wrap = invoke_task_wrap + pipeline # send our Invoke steps piggyback with the activity's tw.
 
           # this could also be achieved using Subprocess and the tw merging logic, but please not at runtime (for now).
         task_wrap_pipeline = Activity::TaskWrap::Pipeline.new(task_wrap)
