@@ -2,19 +2,64 @@ require_relative "invoke/version"
 require "trailblazer/activity/dsl/linear"
 require "trailblazer/invoke/matcher"
 
+# IDEA: pipeline for {my_dynamic_arguments} so we can have
+#  user options like
+#    alias
+#    tracing turned on by whatever condition
+#  features like
+#    pro: add :present_options and wtf invoke/options.
+
+
 module Trailblazer
   module Invoke
     def self.module!(target, canonical_invoke_name: :__, canonical_wtf_name: "#{canonical_invoke_name}?", &arguments_block)
-      arguments_block = ->(*) { {} } unless block_given?
+      options_pipeline = Options.build(block: arguments_block)
 
       # DISCUSS: store arguments_block in a class instance variable and refrain from using {define_method}?
       target.define_method(canonical_invoke_name) do |activity, options, **kws, &block|
-        Canonical.__(activity, options, my_dynamic_arguments: arguments_block, **kws, &block)
+        Canonical.__(activity, options, my_dynamic_arguments: options_pipeline, **kws, &block)
       end
 
       target.define_method(canonical_wtf_name) do |activity, options, **kws, &block|
-        Canonical.__?(activity, options, my_dynamic_arguments: arguments_block, **kws, &block)
+        Canonical.__?(activity, options, my_dynamic_arguments: options_pipeline, **kws, &block)
       end
+    end
+
+    # Dynamic options per invocation.
+    # Implements a pipeline (like the taskWrap) to merge options that are passed to canonical-invoke.
+    class Options
+      singleton_class.instance_variable_set(:@steps, []) # TODO: this is private API so far, but will be public one day soon for your extension!
+
+      def self.build(steps: singleton_class.instance_variable_get(:@steps), block:)
+        arguments_block = block ? Merge.build(block) : Passthrough
+
+        pipeline = Activity::TaskWrap::Pipeline.new([steps + Activity::TaskWrap::Pipeline.Row("user_block", arguments_block)])
+
+        new(pipeline)
+      end
+
+      def initialize(pipeline)
+        @pipeline = pipeline
+      end
+
+      def call(*args, **kws) # DISCUSS: remove this and pass {} in #__.
+        options, _ = @pipeline.({}, [args, kws])
+        options
+      end
+
+      module Merge
+        def self.build(proc)
+          ->(options, (args, kws)) do
+            new_options = options.merge(
+              proc.(*args, **kws)
+            )
+
+            return new_options, [args, kws]
+          end
+        end
+      end
+
+      Passthrough = ->(*args) { args }  # NOOP.
     end
 
     # This module implements the end user's top level entry point for running activities.
