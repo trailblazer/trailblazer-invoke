@@ -2,7 +2,7 @@ require_relative "invoke/version"
 require "trailblazer/activity/dsl/linear"
 require "trailblazer/invoke/matcher"
 
-# IDEA: pipeline for {my_dynamic_arguments} so we can have
+# IDEA: pipeline for {options_compiler} so we can have
 #  user options like
 #    alias
 #    tracing turned on by whatever condition
@@ -17,11 +17,11 @@ module Trailblazer
 
       # DISCUSS: store arguments_block in a class instance variable and refrain from using {define_method}?
       target.define_method(canonical_invoke_name) do |activity, options, **kws, &block|
-        Canonical.__(activity, options, my_dynamic_arguments: options_pipeline, **kws, &block)
+        Canonical.__(activity, options, options_compiler: options_pipeline, **kws, &block)
       end
 
       target.define_method(canonical_wtf_name) do |activity, options, **kws, &block|
-        Canonical.__?(activity, options, my_dynamic_arguments: options_pipeline, **kws, &block)
+        Canonical.__?(activity, options, options_compiler: options_pipeline, **kws, &block)
       end
     end
 
@@ -29,6 +29,7 @@ module Trailblazer
     # Implements a pipeline (like the taskWrap) to merge options that are passed to canonical-invoke.
     class Options
       singleton_class.instance_variable_set(:@steps, []) # TODO: this is private API so far, but will be public one day soon for your extension!
+      # This is where we can plug in additional canonical-invoke options compiler, e.g. from {trailblazer-pro}.
 
       def self.build(steps: singleton_class.instance_variable_get(:@steps), block:)
         arguments_block = block ? Merge.build(block) : Passthrough
@@ -71,11 +72,11 @@ module Trailblazer
     module Canonical
       module_function
 
-      def __(activity, options, my_dynamic_arguments:, **kws, &block)
+      def __(activity, options, options_compiler:, **kws, &block)
         Trailblazer::Invoke.(
           activity,
           options,
-          **my_dynamic_arguments.(activity, options, **kws), # represents {:invoke_method} and {:present_options}
+          **options_compiler.(activity, options, **kws), # represents {:invoke_method} and {:present_options}
           **kws,
           &block
         )
