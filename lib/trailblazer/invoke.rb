@@ -13,15 +13,15 @@ require "trailblazer/invoke/matcher"
 module Trailblazer
   module Invoke
     def self.module!(target, canonical_invoke_name: :__, canonical_wtf_name: "#{canonical_invoke_name}?", &arguments_block)
-      options_pipeline = Options.build(block: arguments_block)
+      options_compiler = Options.build(block: arguments_block) # DISCUSS: pass {:steps} here to make it more obvious?
 
       # DISCUSS: store arguments_block in a class instance variable and refrain from using {define_method}?
       target.define_method(canonical_invoke_name) do |activity, options, **kws, &block|
-        Canonical.__(activity, options, options_compiler: options_pipeline, **kws, &block)
+        Canonical.__(activity, options, options_compiler: options_compiler, **kws, &block)
       end
 
       target.define_method(canonical_wtf_name) do |activity, options, **kws, &block|
-        Canonical.__?(activity, options, options_compiler: options_pipeline, **kws, &block)
+        Canonical.__?(activity, options, options_compiler: options_compiler, **kws, &block)
       end
     end
 
@@ -32,9 +32,9 @@ module Trailblazer
       # This is where we can plug in additional canonical-invoke options compiler, e.g. from {trailblazer-pro}.
 
       def self.build(steps: singleton_class.instance_variable_get(:@steps), block:)
-        arguments_block = block ? Merge.build(block) : Passthrough
+        arguments_block = block ? HeuristicMerge.build(block) : Passthrough
 
-        pipeline = Activity::TaskWrap::Pipeline.new([steps + Activity::TaskWrap::Pipeline.Row("user_block", arguments_block)])
+        pipeline = Activity::TaskWrap::Pipeline.new(steps + [Activity::TaskWrap::Pipeline.Row("user_block", arguments_block)])
 
         new(pipeline)
       end
@@ -45,15 +45,34 @@ module Trailblazer
 
       def call(*args, **kws) # DISCUSS: remove this and pass {} in #__.
         options, _ = @pipeline.({}, [args, kws])
+
         options
       end
 
-      module Merge
+      # DISCUSS: unfortunately, we cannot use deep_merge by hashie as it converts Hash instances with a default to
+      # simple hashes without default. That doesn't play well with wrap_runtime.
+      module HeuristicMerge
         def self.build(proc)
           ->(options, (args, kws)) do
-            new_options = options.merge(
-              proc.(*args, **kws)
-            )
+            options_from_step = proc.(*args, **kws, aggregate: options)
+
+            # FIXME: of course, that's not final.
+            bla_options = options.merge(options_from_step)
+
+            new_options =
+            [:flow_options, :circuit_options].inject(options) do |memo, key|
+              if option1 = options_from_step[key]
+                if option2 = options[key]
+                  memo.merge(key => option2.merge(option1))
+                else
+                  memo.merge(key => option1)
+                end
+              else
+                memo
+              end
+            end
+
+            new_options = bla_options.merge( new_options)
 
             return new_options, [args, kws]
           end
@@ -61,6 +80,11 @@ module Trailblazer
       end
 
       Passthrough = ->(*args) { args }  # NOOP.
+
+      # require "hashie/extensions/deep_merge"
+      # class Hash < Hash
+      #   include Hashie::Extensions::DeepMerge
+      # end
     end
 
     # This module implements the end user's top level entry point for running activities.

@@ -223,6 +223,120 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal stdout, %(Trailblazer::Developer::Wtf::Renderer\n)
     end
+
+    def add_1(wrap_ctx, original_args)
+      ctx, = original_args[0]
+      # ctx[:seq] << [1, wrap_ctx[:task]]
+      ctx[:seq] << 1
+
+      return wrap_ctx, original_args # yay to mutable state. not.
+    end
+
+    it "we can add default steps to the options compiler and merge with other steps" do
+      # Scenario here is that {my_options_step} provides {:circuit_options}, and the user options block
+      # also provides those, but merges them.
+
+      my_task_wrap_ext = Trailblazer::Activity::TaskWrap.Extension(
+        [method(:add_1), id: "my.add_1", prepend: "task_wrap.call_task"]
+      )
+
+      # exemplary plugin/gem:
+      my_options_step = ->(activity, options, **options_for_invoke) do
+        # raise "is something like wtf? just another options step? we could save tons of logic."
+        {
+          circuit_options: {
+            wrap_runtime: Hash.new(my_task_wrap_ext)
+          }
+        }
+      end
+      my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
+
+      # this would happen in plugin gems.
+      steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
+      steps = steps + [
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
+      ]
+      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
+
+
+      kernel = Class.new do
+        Trailblazer::Invoke.module!(self) do |*|
+          {
+            # This doesn't override {:circuit_options} from above, but merges both.
+            circuit_options: {
+              override_everything: true,
+            }
+          }
+        end
+      end.new
+
+      signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal CU.inspect(ctx.to_h), %({:seq=>[1, 1, 1, :model, 1], :model=>Object})
+
+      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
+    end
+
+    def save_circuit_options(wrap_ctx, original_args)
+      circuit_options = original_args[1]
+      original_args[0][0][:saved_circuit_options] = circuit_options.slice(:read_from_top_level).inspect
+
+      return wrap_ctx, original_args
+    end
+    # Test circuit_options is merged, and we can access {:aggregate}
+    it "we can access {:aggregate} when arguments are compiled" do
+      my_task_wrap_ext = Trailblazer::Activity::TaskWrap.Extension(
+        [method(:save_circuit_options), id: "my.save_circuit_options", prepend: "task_wrap.call_task"]
+      )
+
+      my_options_step = ->(activity, options, **options_for_invoke) do
+        {
+          circuit_options: {
+            wrap_runtime: Hash.new(my_task_wrap_ext)
+          }
+        }
+      end
+      my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
+
+      my_setter_step = ->(*) { {top_level: true} }
+      my_setter_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_setter_step)
+
+      my_aggregate_reader_step = ->(activity, options, aggregate:, **options_for_invoke) do
+        {
+          circuit_options: {read_from_top_level: aggregate[:top_level]}
+        }
+      end
+      my_aggregate_reader_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_aggregate_reader_step)
+
+      steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
+      steps = steps + [
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
+        # set {:top_level} and read it in the next step.
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_setter_step", my_setter_step),
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_aggregate_reader_step", my_aggregate_reader_step),
+      ]
+      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
+
+      kernel = Class.new do
+        Trailblazer::Invoke.module!(self) do |*|
+          {
+            # This doesn't override {:circuit_options} from above, but merges both.
+            # circuit_options: {
+            #   override_everything: true,
+            # }
+          }
+        end
+      end.new
+
+      signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal CU.inspect(ctx[:saved_circuit_options]), %({:read_from_top_level=>true})
+
+
+      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
+    end
   end
 
   describe "with matcher interface" do
