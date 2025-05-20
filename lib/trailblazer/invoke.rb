@@ -60,7 +60,7 @@ module Trailblazer
             bla_options = options.merge(options_from_step)
 
             new_options =
-            [:flow_options, :circuit_options].inject(options) do |memo, key|
+            [:flow_options, :circuit_options].inject(bla_options) do |memo, key|
               if option1 = options_from_step[key]
                 if option2 = options[key]
                   memo.merge(key => option2.merge(option1))
@@ -71,8 +71,6 @@ module Trailblazer
                 memo
               end
             end
-
-            new_options = bla_options.merge( new_options)
 
             return new_options, [args, kws]
           end

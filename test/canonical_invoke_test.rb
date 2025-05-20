@@ -198,7 +198,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx[:model], Object
       assert_equal ctx[:record], nil
-      assert_equal flow_options[:arguments_we_can_see], [CanonicalInvokeTest::Create, "{:seq=>[], :model=>Object}", "{:enable_tracing=>false}"]
+      assert_equal flow_options[:arguments_we_can_see], [CanonicalInvokeTest::Create, "{:seq=>[], :model=>Object}", "{:enable_tracing=>false, :aggregate=>{}}"]
     end
 
     it "we can set {:circuit_options}" do
@@ -334,6 +334,40 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal CU.inspect(ctx[:saved_circuit_options]), %({:read_from_top_level=>true})
 
+
+      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
+    end
+
+    it "the user block wins over former steps, we override {:invoke_method}" do
+      my_options_step = ->(*) do
+        {
+          invoke_method: Object, # never called, hopefully.
+        }
+      end
+      my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
+
+      steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
+      steps = steps + [
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
+      ]
+      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
+
+      kernel = Class.new do
+        Trailblazer::Invoke.module!(self) do |*|
+          {
+            invoke_method: Trailblazer::Developer::Wtf.method(:invoke)
+          }
+        end
+      end.new
+
+      signal, ctx = nil
+
+      stdout, _ = capture_io do
+        signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
+      end
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal stdout, create_trace
 
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
     end
