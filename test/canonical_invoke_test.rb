@@ -338,7 +338,7 @@ class CanonicalInvokeTest < Minitest::Spec
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
     end
 
-    it "the user block wins over former steps, we override {:invoke_method}" do
+    it "the user block wins over previous steps, we override {:invoke_method}" do
       my_options_step = ->(*) do
         {
           invoke_method: Object, # never called, hopefully.
@@ -365,6 +365,48 @@ class CanonicalInvokeTest < Minitest::Spec
       stdout, _ = capture_io do
         signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
       end
+
+      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+      assert_equal stdout, create_trace
+
+      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
+    end
+
+    it "accepts {:adds_for_options_compiler} option to add additional option compilation steps for options-compiler" do
+      my_options_step = ->(*) do
+        {
+          # invoke_method: Object, # never called, hopefully.
+        }
+      end
+      my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
+
+      steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
+      steps = steps + [
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
+      ]
+      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
+
+      kernel = Class.new do
+        Trailblazer::Invoke.module!(self) do |*|
+          {
+            # invoke_method: Trailblazer::Developer::Wtf.method(:invoke)
+            # TODO: add something here.
+          }
+        end
+      end.new
+
+      signal, ctx, flow_options = nil
+
+      stdout, _ = capture_io do
+        signal, (ctx, flow_options) = kernel.__(
+          Create,
+          self.ctx,
+          adds_for_options_compiler: [[Trailblazer::Invoke::Options::HeuristicMerge.build(Trailblazer::Developer::Trace.method(:invoke_options_for)), id: "developer.trace", append: nil]],
+          invoke_method: Trailblazer::Developer::Wtf.method(:invoke_with_rescue),
+        )
+      end
+
+      assert_equal flow_options[:stack].to_a.size, 8
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal stdout, create_trace

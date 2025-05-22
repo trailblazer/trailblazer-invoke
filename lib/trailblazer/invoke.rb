@@ -43,8 +43,10 @@ module Trailblazer
         @pipeline = pipeline
       end
 
-      def call(*args, **kws) # DISCUSS: remove this and pass {} in #__.
-        options, _ = @pipeline.({}, [args, kws])
+      def call(*args, adds_for_options_compiler: [], **kws) # DISCUSS: remove this and pass {} in #__.
+        pipeline = Activity::Adds.(@pipeline, *adds_for_options_compiler) # DISCUSS: this could be sped up?
+
+        options, _ = pipeline.({}, [args, kws])
 
         options
       end
@@ -179,6 +181,7 @@ module Trailblazer
     end
 
     require "trailblazer/activity/dsl/linear" # DISCUSS: do we want that here? where should we compile INVOKE_TASK_WRAP?
+    # TODO: rename to {#task_wrap_for_invoke}
     def invoke_task_wrap
       # raise "use Subprocess to always retrieve initial_task_wrap, then add the custom Context() extension as the first element, then merge step options, then consider caching that via invoke."
       # Instead of creating the {ctx} manually, use an In() filter for the outermost activity.

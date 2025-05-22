@@ -68,6 +68,35 @@ end
 
 ## Notes
 
+before this, all gems had to override public_call etc, ordering problems, issues with activity vs OP, etc.
+this also allows for compiling options like flow_options and present_options, invoke_method, etc
+gems like pro can now in a central place, add their options on each OP call.
+
+
+
 invoke is about "centralizing" how OPs and activities are called, configuring what gets injected, and provides a matcher block syntax
 
 E.g. when you want to have a "global" wtf? ENV variable
+
+Basically invoke provides a "central" method to invoke OPs, and some super simple mechanism to compile various options for each call (like tracing yes/no)
+
+
+invoke compiles its own container_activity and uses the TaskWrap.invoke( container_activity: ) option.
+
+
+
+idea is to have an "endpoint" for running activities, like a "meta activity", so everything is consistent.
+
+we also create the Context instance
+
+DISCUSS: don't override call to plug in another wrap_runtime, use an Options step.
+
+
+
+
+1. invoking an OP is all about passing options
+2. this used to be quite "messy", wtf calling trace calling TaskWrap.invoke, manually merging options etc, plus your own monkey-patches
+3. options merging is now done by options-compiler
+  6. TODO: merging {:wrap_runtime}.
+4. invoking the actual activity is always TaskWrap.invoke
+5. also supports block/matcher syntax
