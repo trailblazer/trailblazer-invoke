@@ -109,7 +109,8 @@ module Trailblazer
       def __?(*args, **kws, &block)
         __(
           *args,
-          invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
+          # invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
+          **Trailblazer::Developer::Wtf.options_for_invoke,
           **kws,
           &block
         )

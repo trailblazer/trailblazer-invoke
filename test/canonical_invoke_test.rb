@@ -7,6 +7,23 @@ class CanonicalInvokeTest < Minitest::Spec
     include T.def_steps(:model)
   end
 
+  class Capture < Trailblazer::Activity::Railway
+    step task: :capture_flow_options
+    step task: :capture_circuit_options
+
+    def capture_flow_options((ctx, flow_options), **)
+      ctx[:captured_flow_options] = flow_options.inspect
+
+      return Trailblazer::Activity::Right, [ctx, flow_options]
+    end
+
+    def capture_circuit_options((ctx, flow_options), **circuit_options)
+      ctx[:captured_circuit_options] = circuit_options.inspect
+
+      return Trailblazer::Activity::Right, [ctx, flow_options]
+    end
+  end
+
   def render(content)
     @render = content
   end
@@ -21,6 +38,59 @@ class CanonicalInvokeTest < Minitest::Spec
 )
   end
 
+  # _FLOW_OPTIONS = {
+  #   context_options: {
+  #     aliases: {"model": :record},
+  #     container_class: Trailblazer::Context::Container::WithAliases,
+  #   }
+  # }
+
+
+  # test #__()
+  #   test :flow_options
+  let(:kernel) {
+    Class.new {
+      Trailblazer::Invoke.module!(self) do
+        {
+          flow_options: {origin: "i am set in canonical user block"},
+          circuit_options: {from: "from canonical user block"}
+        }
+      end
+    }.new
+  }
+
+  it "allows passing {:flow_options} to {#__} which overrides any {flow_options} from options-compiler" do
+    my_flow_options = {override_everything: true}
+
+    signal, (ctx,) = kernel.__(Capture, self.ctx, flow_options: my_flow_options)
+
+    assert_equal CU.inspect(ctx[:captured_flow_options]), %({:override_everything=>true})
+
+    # Tracing is done through {:circuit_options}, we override {flow_options} and need to set {:stack} and friends.
+    stdout, _ = capture_io do
+      signal, (ctx,) = kernel.__?(Capture, self.ctx, flow_options: my_flow_options.merge(Trailblazer::Developer::Trace.invoke_options_for(Capture, self.ctx)[:flow_options]))
+    end
+
+    # assert_create_run(signal, ctx)
+    assert_equal stdout, %(CanonicalInvokeTest::Capture
+|-- \e[32mStart.default\e[0m
+|-- \e[32mcapture_flow_options\e[0m
+|-- \e[32mcapture_circuit_options\e[0m
+`-- End.success
+)
+    assert_equal CU.inspect(ctx[:captured_flow_options])[0..28], %({:override_everything=>true, ) # FIXME: hm, test kinda sucks.
+  end
+
+
+
+
+
+
+
+
+
+
+
   describe "module!(self) without options" do
     let(:kernel) {
       Class.new { Trailblazer::Invoke.module!(self) }.new
@@ -34,8 +104,6 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
 
-      # TODO: test flow_options
-
       stdout, _ = capture_io do
         signal, (ctx,) = kernel.__?(Create, self.ctx)
       end
@@ -47,26 +115,6 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal stdout, create_trace
     end
 
-    it "allows passing {:flow_options} to {#__}" do
-      _FLOW_OPTIONS = {
-        context_options: {
-          aliases: {"model": :record},
-          container_class: Trailblazer::Context::Container::WithAliases,
-        }
-      }
-
-      signal, (ctx,) = kernel.__(Create, self.ctx, flow_options: _FLOW_OPTIONS)
-
-      assert_equal ctx.class, Trailblazer::Context::Container::WithAliases
-      assert_create_run(signal, ctx)
-
-      stdout, _ = capture_io do
-        signal, (ctx,) = kernel.__?(Create, self.ctx, flow_options: _FLOW_OPTIONS)
-      end
-
-      assert_create_run(signal, ctx)
-      assert_equal stdout, create_trace
-    end
 
     it "{#__} accepts {:task_wrap_extensions_for_activity} option" do
       def my_call_task(wrap_ctx, original_args)
@@ -140,18 +188,18 @@ class CanonicalInvokeTest < Minitest::Spec
         Trailblazer::Invoke.module!(self) do |activity, options, enable_tracing:, **|
           # This tests we can pass arbitrary options such as {:enable_tracing},
           # and that we can set invoke_method
-          runtime_call_keywords = enable_tracing ? {invoke_method: Trailblazer::Developer::Wtf.method(:invoke)} : {}
 
-          {
+          options_with_aliasing = {
             flow_options: {
               context_options: {
                 aliases: {"model": :record},
                 container_class: Trailblazer::Context::Container::WithAliases,
               },
             },
-
-            **runtime_call_keywords, # {:invoke_method}
+            # **runtime_call_keywords, # {:invoke_method}
           }
+
+          enable_tracing ? Trailblazer::Developer::Wtf.invoke_options_for(**options_with_aliasing) : options_with_aliasing
         end
       end.new
 
@@ -203,14 +251,12 @@ class CanonicalInvokeTest < Minitest::Spec
 
     it "we can set {:circuit_options}" do
       kernel = Class.new do
-        Trailblazer::Invoke.module!(self) do |*|
-          {
-            invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
-
+        Trailblazer::Invoke.module!(self) do |*args|
+          Trailblazer::Developer::Wtf.invoke_options_for(
             circuit_options: {
               present_options: {render_method: ->(renderer:, **) { renderer.inspect }}
             },
-          }
+          )
         end
       end.new
 
@@ -355,7 +401,8 @@ class CanonicalInvokeTest < Minitest::Spec
       kernel = Class.new do
         Trailblazer::Invoke.module!(self) do |*|
           {
-            invoke_method: Trailblazer::Developer::Wtf.method(:invoke)
+            # invoke_method: Trailblazer::Developer::Wtf.method(:invoke)
+            **Trailblazer::Developer::Wtf.invoke_options_for
           }
         end
       end.new
@@ -401,8 +448,8 @@ class CanonicalInvokeTest < Minitest::Spec
         signal, (ctx, flow_options) = kernel.__(
           Create,
           self.ctx,
-          adds_for_options_compiler: [[Trailblazer::Invoke::Options::HeuristicMerge.build(Trailblazer::Developer::Trace.method(:invoke_options_for)), id: "developer.trace", append: nil]],
-          invoke_method: Trailblazer::Developer::Wtf.method(:invoke_with_rescue),
+
+          **Trailblazer::Developer::Wtf.options_for_invoke
         )
       end
 
@@ -420,7 +467,8 @@ class CanonicalInvokeTest < Minitest::Spec
       Class.new do
         Trailblazer::Invoke.module!(self) do |*|
           {
-            invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
+            # invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
+            **Trailblazer::Developer::Wtf.invoke_options_for
           }
         end
       end.new
