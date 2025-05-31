@@ -164,17 +164,22 @@ class CanonicalInvokeTest < Minitest::Spec
     kernel = Class.new {
       Trailblazer::Invoke.module!(self) do
         {
-          flow_options: {origin: "i am set in canonical user block"}, # shouldn't be visible.
-          circuit_options: {from: "from canonical user block"}
+          flow_options:     {origin: "i am set in canonical user block"}, # shouldn't be visible.
+          circuit_options:  {from: "from canonical user block"},
+          invoke_method:    ->(*) { raise }, # never gets called.
         }
       end
     }.new
 
-    my_overrides = {flow_options: {override_everything: true}, circuit_options: {override: "circuit_options!"}}
+    my_overrides = {
+      flow_options:     {override_everything: true},
+      circuit_options:  {override: "circuit_options!"},
+      invoke_method:    ->(activity, args, **circuit_options) { Trailblazer::Activity::TaskWrap.invoke(activity, args, **circuit_options, my_invoke: true) },
+    }
 
     signal, (ctx,) = kernel.__(Capture, self.ctx, **my_overrides)
 
-    assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:seq=>[], :model=>Object, :captured_flow_options=>\"{:override_everything=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :override=>\\\"circuit_options!\\\", :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
+    assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:seq=>[], :model=>Object, :captured_flow_options=>\"{:override_everything=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :override=>\\\"circuit_options!\\\", :my_invoke=>true, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
 
     # Tracing is done through {:circuit_options}, we override {flow_options} and need to set {:stack} and friends.
     stdout, _ = capture_io do
