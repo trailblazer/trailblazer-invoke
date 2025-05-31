@@ -1,27 +1,30 @@
 require "test_helper"
 
-# Tests #__()
+# Tests the combination of {#module!} and {#__}.
 class CanonicalInvokeTest < Minitest::Spec
+  after { Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) }
+
   class Create < Trailblazer::Activity::FastTrack
     step :model
     include T.def_steps(:model)
   end
 
   class Capture < Trailblazer::Activity::Railway
-    step task: :capture_flow_options
-    step task: :capture_circuit_options
-
-    def capture_flow_options((ctx, flow_options), **)
+    def self.capture_flow_options((ctx, flow_options), **)
       ctx[:captured_flow_options] = flow_options.inspect
 
       return Trailblazer::Activity::Right, [ctx, flow_options]
     end
 
-    def capture_circuit_options((ctx, flow_options), **circuit_options)
+    def self.capture_circuit_options((ctx, flow_options), **circuit_options)
       ctx[:captured_circuit_options] = circuit_options.inspect
 
       return Trailblazer::Activity::Right, [ctx, flow_options]
     end
+
+    step task: method(:capture_flow_options) # FIXME: {step task: :method} is still wrapped in Option.
+    step task: method(:capture_circuit_options)
+
   end
 
   def render(content)
@@ -46,39 +49,11 @@ class CanonicalInvokeTest < Minitest::Spec
   # }
 
 
-  # test #__()
-  #   test :flow_options
-  let(:kernel) {
-    Class.new {
-      Trailblazer::Invoke.module!(self) do
-        {
-          flow_options: {origin: "i am set in canonical user block"},
-          circuit_options: {from: "from canonical user block"}
-        }
-      end
-    }.new
-  }
 
-  it "allows passing {:flow_options} to {#__} which overrides any {flow_options} from options-compiler" do
-    my_flow_options = {override_everything: true}
 
-    signal, (ctx,) = kernel.__(Capture, self.ctx, flow_options: my_flow_options)
 
-    assert_equal CU.inspect(ctx[:captured_flow_options]), %({:override_everything=>true})
-
-    # Tracing is done through {:circuit_options}, we override {flow_options} and need to set {:stack} and friends.
-    stdout, _ = capture_io do
-      signal, (ctx,) = kernel.__?(Capture, self.ctx, flow_options: my_flow_options.merge(Trailblazer::Developer::Trace.invoke_options_for(Capture, self.ctx)[:flow_options]))
-    end
-
-    # assert_create_run(signal, ctx)
-    assert_equal stdout, %(CanonicalInvokeTest::Capture
-|-- \e[32mStart.default\e[0m
-|-- \e[32mcapture_flow_options\e[0m
-|-- \e[32mcapture_circuit_options\e[0m
-`-- End.success
-)
-    assert_equal CU.inspect(ctx[:captured_flow_options])[0..28], %({:override_everything=>true, ) # FIXME: hm, test kinda sucks.
+  it "allows merging {:wrap_runtime}" do
+    # TODO.
   end
 
 
@@ -88,21 +63,23 @@ class CanonicalInvokeTest < Minitest::Spec
 
 
 
-
-
-
+  # Generic behavior tests, the fact that module! hasn't got any return hash is mostly irrelevant.
   describe "module!(self) without options" do
     let(:kernel) {
       Class.new { Trailblazer::Invoke.module!(self) }.new
     }
 
-    it "calls the activity, and returns original resultset" do
+    it "{#__} calls the activity, and returns original resultset" do
       signal, (ctx,) = kernel.__(Create, self.ctx)
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx.class, Trailblazer::Context::Container#::WithAliases
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
+    end
+
+    it "{#__?} returns original result set and prints trace" do
+      signal, ctx = nil
 
       stdout, _ = capture_io do
         signal, (ctx,) = kernel.__?(Create, self.ctx)
@@ -114,7 +91,6 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal ctx.keys, [:seq, :model]
       assert_equal stdout, create_trace
     end
-
 
     it "{#__} accepts {:task_wrap_extensions_for_activity} option" do
       def my_call_task(wrap_ctx, original_args)
@@ -180,6 +156,39 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal CU.inspect(ctx), %({:seq=>[:i_was_here, :model], :model=>Object})
     end
+  end
+
+  #@@@ Test {Invoke.call}-specific options.
+  # DISCUSS: why is this needed? for __? and injecting circuit_options and flow_options?
+  it "allows passing {:flow_options} and friends to {#__} which overrides any {flow_options} from options-compiler" do # TODO: test circuit_options, flow_options, invoke_method
+    kernel = Class.new {
+      Trailblazer::Invoke.module!(self) do
+        {
+          flow_options: {origin: "i am set in canonical user block"}, # shouldn't be visible.
+          circuit_options: {from: "from canonical user block"}
+        }
+      end
+    }.new
+
+    my_overrides = {flow_options: {override_everything: true}, circuit_options: {override: "circuit_options!"}}
+
+    signal, (ctx,) = kernel.__(Capture, self.ctx, **my_overrides)
+
+    assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:seq=>[], :model=>Object, :captured_flow_options=>\"{:override_everything=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :override=>\\\"circuit_options!\\\", :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
+
+    # Tracing is done through {:circuit_options}, we override {flow_options} and need to set {:stack} and friends.
+    stdout, _ = capture_io do
+      signal, (ctx,) = kernel.__?(Capture, self.ctx, flow_options: my_overrides[:flow_options].merge(Trailblazer::Developer::Trace.invoke_options_for(Capture, self.ctx)[:flow_options]))
+    end
+
+    # assert_create_run(signal, ctx)
+    assert_equal stdout, %(CanonicalInvokeTest::Capture
+|-- \e[32mStart.default\e[0m
+|-- \e[32m#<Method: #<Class:>.capture_flow_options>\e[0m
+|-- \e[32m#<Method: #<Class:>.capture_circuit_options>\e[0m
+`-- End.success
+)
+    assert_equal CU.inspect(ctx[:captured_flow_options])[0..28], %({:override_everything=>true, ) # FIXME: hm, test kinda sucks.
   end
 
   describe "module!(self) with dynamic args" do
@@ -320,8 +329,6 @@ class CanonicalInvokeTest < Minitest::Spec
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal CU.inspect(ctx.to_h), %({:seq=>[1, 1, 1, :model, 1], :model=>Object})
-
-      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
     end
 
     def save_circuit_options(wrap_ctx, original_args)
@@ -449,7 +456,7 @@ class CanonicalInvokeTest < Minitest::Spec
           Create,
           self.ctx,
 
-          **Trailblazer::Developer::Wtf.options_for_invoke
+          **Trailblazer::Developer::Wtf.options_for_canonical_invoke
         )
       end
 
