@@ -92,6 +92,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal stdout, create_trace
     end
 
+    # DISCUSS: this test case has nothing to do with the empty module! block.
     it "{#__} accepts {:task_wrap_extensions_for_activity} option" do
       def my_call_task(wrap_ctx, original_args)
         # original_args[0][0][:i_was_here] = true
@@ -112,6 +113,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal CU.inspect(ctx), %({:i_was_here=>true})
     end
 
+    # DISCUSS: this test case has nothing to do with the empty module! block.
     it "{#__} grabs `activity{:task_wrap_extensions}` if not passed (see {:task_wrap_extensions_for_activity}) and passed invoke {**options} to the extensions" do
       activity = Class.new(Trailblazer::Activity::Railway) do
         # This usually happens in extensions such as {trailblazer-dependency}.
@@ -140,6 +142,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal CU.inspect(ctx.to_h), %({:tw=>\"hello from taskWrap \\\"tw ID xxx\\\"\"})
     end
 
+    # DISCUSS: this test case has nothing to do with the empty module! block.
     it "{#__} accepts {:invoke_task_wrap} option" do
       def my_task_wrap_step(wrap_ctx, original_args)
         original_args[0][0][:seq] << :i_was_here
@@ -158,6 +161,8 @@ class CanonicalInvokeTest < Minitest::Spec
     end
   end
 
+  MY_INVOKE_METHOD = ->(activity, args, **circuit_options) { Trailblazer::Activity::TaskWrap.invoke(activity, args, **circuit_options, my_invoke: true) }
+
   #@@@ Test {Invoke.call}-specific options.
   # DISCUSS: why is this needed? for __? and injecting circuit_options and flow_options?
   it "allows passing {:flow_options} and friends to {#__} which overrides any {flow_options} from options-compiler" do # TODO: test circuit_options, flow_options, invoke_method
@@ -174,7 +179,7 @@ class CanonicalInvokeTest < Minitest::Spec
     my_overrides = {
       flow_options:     {override_everything: true},
       circuit_options:  {override: "circuit_options!"},
-      invoke_method:    ->(activity, args, **circuit_options) { Trailblazer::Activity::TaskWrap.invoke(activity, args, **circuit_options, my_invoke: true) },
+      invoke_method:    MY_INVOKE_METHOD,
     }
 
     signal, (ctx,) = kernel.__(Capture, self.ctx, **my_overrides)
@@ -196,6 +201,72 @@ class CanonicalInvokeTest < Minitest::Spec
     assert_equal CU.inspect(ctx[:captured_flow_options])[0..28], %({:override_everything=>true, ) # FIXME: hm, test kinda sucks.
   end
 
+  # TODO: test {:extensions} option for {#__}.
+  # TODO: test that we only merge on one level.
+  it "steps from options-compiler and user block are deep-merged (currently on the first level, only)" do
+    my_options_step_1 = ->(activity, options, **options_for_invoke) do
+      {
+        circuit_options: {
+          step_1: {option: true}
+        },
+        flow_options: {
+          step_1_flow: true
+        },
+        invoke_method: :step_1,
+      }
+    end
+    my_options_step_1 = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step_1)
+
+    my_options_step_2 = ->(activity, options, **options_for_invoke) do
+      {
+        circuit_options: {
+          step_2: {option: false}
+        },
+        flow_options: {
+          step_2_flow: {some: :option}
+        },
+        invoke_method: :step_2,
+      }
+    end
+    my_options_step_2 = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step_2)
+
+    # this would happen in plugin gems.
+    steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
+    steps = steps + [
+      Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_1", my_options_step_1),
+      Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_2", my_options_step_2),
+    ]
+    Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
+
+    kernel = Class.new do
+      Trailblazer::Invoke.module!(self) do |*|
+        {
+          # This doesn't override {:circuit_options} from above, but merges both.
+          circuit_options: {
+            override_everything: true
+          },
+          flow_options: {
+            user_block: true
+          },
+          invoke_method: MY_INVOKE_METHOD # wins
+        }
+      end
+    end.new
+
+    signal, (ctx, flow_options) = kernel.__(Capture, {})
+
+    assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
+    assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:captured_flow_options=>\"{:step_1_flow=>true, :step_2_flow=>{:some=>:option}, :user_block=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :step_1=>{:option=>true}, :step_2=>{:option=>false}, :override_everything=>true, :my_invoke=>true, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"}})
+  end
+
+  # empty block,
+
+
+  # user block wins over options compiler, and is deep-merged.
+  # adds_for_options_compiler
+
+
+  #@@@ Test how the {module!} block behaves.
   describe "module!(self) with dynamic args" do
     it "allows passing arbitrary options to {#__}, such as {:enable_tracing} and allows setting {:invoke_method} and {:flow_options}" do
       kernel = Class.new do
@@ -324,7 +395,7 @@ class CanonicalInvokeTest < Minitest::Spec
           {
             # This doesn't override {:circuit_options} from above, but merges both.
             circuit_options: {
-              override_everything: true,
+              override_everything: true
             }
           }
         end
