@@ -58,8 +58,14 @@ module Trailblazer
           ->(options, (args, kws)) do
             options_from_step = proc.(*args, **kws, aggregate: options)
 
+            # feature of invoke: merge {circuit_options.wrap_runtime}
+            # if has_wrap_runtime?(options)
+              options_from_step = merge_wrap_runtime(options, options_from_step)
+            # end
+
             # FIXME: of course, that's not final.
             bla_options = options.merge(options_from_step)
+
 
             new_options =
             [:flow_options, :circuit_options].inject(bla_options) do |memo, key|
@@ -76,6 +82,43 @@ module Trailblazer
 
             return new_options, [args, kws]
           end
+        end
+
+        # TODO: merge {:wrap_runtime}
+        # TODO: this should actually be handled in hashie. This code part might be implemented by hashie soon.
+        def self.merge_wrap_runtime(options, options_from_step)
+          return options_from_step unless original_wrap_runtime = wrap_runtime_for(options)
+          return options_from_step unless mergable_wrap_runtime = wrap_runtime_for(options_from_step)
+          puts "@@@@@ #{options_from_step.inspect}"
+
+          default_existing_ext = original_wrap_runtime.default
+          default_mergable_ext = mergable_wrap_runtime.default
+
+          new_default = merge_extensions(default_existing_ext, default_mergable_ext)
+# puts "@@@@@ #{new_default.inspect}"
+
+          new_wrap_runtime = Hash.new(new_default)
+
+          keys_to_merge = original_wrap_runtime.keys | mergable_wrap_runtime.keys
+          keys_to_merge.each do |task|
+            new_wrap_runtime[task] = merge_extensions(original_wrap_runtime[task], mergable_wrap_runtime[task])
+          end
+
+          options_from_step[:circuit_options][:wrap_runtime] = new_wrap_runtime # DISCUSS: is it safe to mutate here?
+          options_from_step
+        end
+
+        def self.wrap_runtime_for(options)
+          return unless options.key?(:circuit_options) && options[:circuit_options].key?(:wrap_runtime)
+
+          options[:circuit_options][:wrap_runtime]
+        end
+
+        def self.merge_extensions(original_ext, ext)
+          return original_ext if ext.nil?
+          return ext if original_ext.nil?
+
+          Activity::TaskWrap::Extension.new(*(original_ext.instance_variable_get(:@extension_rows) + ext.instance_variable_get(:@extension_rows)))
         end
       end
 
@@ -110,7 +153,7 @@ module Trailblazer
         __(
           *args,
           # invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
-          **Trailblazer::Developer::Wtf.options_for_invoke,
+          **Trailblazer::Developer::Wtf.options_for_canonical_invoke, # DISCUSS: technically, we're overriding {:adds_for_options_compiler} here.
           **kws,
           &block
         )

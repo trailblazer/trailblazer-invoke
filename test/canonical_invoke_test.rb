@@ -213,6 +213,8 @@ class CanonicalInvokeTest < Minitest::Spec
           step_1_flow: true
         },
         invoke_method: :step_1,
+
+        # non_heuristic_hash: {key: true},
       }
     end
     my_options_step_1 = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step_1)
@@ -226,6 +228,8 @@ class CanonicalInvokeTest < Minitest::Spec
           step_2_flow: {some: :option}
         },
         invoke_method: :step_2,
+
+        # non_heuristic_hash: {more: 1},
       }
     end
     my_options_step_2 = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step_2)
@@ -238,6 +242,8 @@ class CanonicalInvokeTest < Minitest::Spec
     ]
     Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
+
+  # user block wins over options compiler, and is deep-merged.
     kernel = Class.new do
       Trailblazer::Invoke.module!(self) do |*|
         {
@@ -256,13 +262,11 @@ class CanonicalInvokeTest < Minitest::Spec
     signal, (ctx, flow_options) = kernel.__(Capture, {})
 
     assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
-    assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:captured_flow_options=>\"{:step_1_flow=>true, :step_2_flow=>{:some=>:option}, :user_block=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :step_1=>{:option=>true}, :step_2=>{:option=>false}, :override_everything=>true, :my_invoke=>true, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"}})
+    assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:captured_flow_options=>\"{:step_1_flow=>true, :step_2_flow=>{:some=>:option}, :user_block=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :step_1=>{:option=>true}, :step_2=>{:option=>false}, :override_everything=>true, :my_invoke=>true, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
   end
 
   # empty block,
 
-
-  # user block wins over options compiler, and is deep-merged.
   # adds_for_options_compiler
 
 
@@ -357,35 +361,64 @@ class CanonicalInvokeTest < Minitest::Spec
 
     def add_1(wrap_ctx, original_args)
       ctx, = original_args[0]
-      # ctx[:seq] << [1, wrap_ctx[:task]]
-      ctx[:seq] << 1
+      ctx[:seq] << [1, wrap_ctx[:task]]
+      # ctx[:seq] << 1
 
       return wrap_ctx, original_args # yay to mutable state. not.
     end
 
-    it "we can add default steps to the options compiler and merge with other steps" do
-      # Scenario here is that {my_options_step} provides {:circuit_options}, and the user options block
-      # also provides those, but merges them.
+    def add_2(wrap_ctx, original_args)
+      ctx, = original_args[0]
+      ctx[:seq] << 2
 
-      my_task_wrap_ext = Trailblazer::Activity::TaskWrap.Extension(
-        [method(:add_1), id: "my.add_1", prepend: "task_wrap.call_task"]
-      )
+      return wrap_ctx, original_args # yay to mutable state. not.
+    end
+
+    def add_3(wrap_ctx, original_args)
+      ctx, = original_args[0]
+      ctx[:seq] << 3
+
+      return wrap_ctx, original_args # yay to mutable state. not.
+    end
+
+    it "each step can add to {:wrap_runtime}, which is merged by us" do
+      my_task_wrap_ext_1 = Trailblazer::Activity::TaskWrap.Extension([method(:add_1), id: "my.add_1", prepend: "task_wrap.call_task"])
+      my_task_wrap_ext_2 = Trailblazer::Activity::TaskWrap.Extension([method(:add_2), id: "my.add_2", prepend: "task_wrap.call_task"])
+      my_task_wrap_ext_3 = Trailblazer::Activity::TaskWrap.Extension([method(:add_3), id: "my.add_3", prepend: "task_wrap.call_task"])
+
+
+      # TODO: test wrap_runtime nil
 
       # exemplary plugin/gem:
       my_options_step = ->(activity, options, **options_for_invoke) do
-        # raise "is something like wtf? just another options step? we could save tons of logic."
         {
-          circuit_options: {
-            wrap_runtime: Hash.new(my_task_wrap_ext)
-          }
+          circuit_options: {wrap_runtime: Hash.new(my_task_wrap_ext_1), bla: 1}
         }
       end
-      my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
+      my_options_step_1 = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
+
+      # exemplary plugin/gem:
+      my_options_step = ->(activity, options, **options_for_invoke) do
+        {
+          circuit_options: {wrap_runtime: Hash.new(my_task_wrap_ext_2), blubb: 2}
+        }
+      end
+      my_options_step_2 = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
+
+      my_options_step = ->(activity, options, **options_for_invoke) do
+        {
+          circuit_options: {wrap_runtime: {Create => my_task_wrap_ext_3}}
+        }
+      end
+      my_options_step_3 = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
+
 
       # this would happen in plugin gems.
       steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
       steps = steps + [
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_1", my_options_step_1),
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_2", my_options_step_2),
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_3", my_options_step_3),
       ]
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
@@ -393,18 +426,16 @@ class CanonicalInvokeTest < Minitest::Spec
       kernel = Class.new do
         Trailblazer::Invoke.module!(self) do |*|
           {
-            # This doesn't override {:circuit_options} from above, but merges both.
-            circuit_options: {
-              override_everything: true
-            }
+            circuit_options: {wrap_runtime: {Create => my_task_wrap_ext_2}}
           }
         end
       end.new
 
       signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
 
+# NOTE that the default from wrap_runtime is also applied with Create as it is merged with the explicit steps.
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
-      assert_equal CU.inspect(ctx.to_h), %({:seq=>[1, 1, 1, :model, 1], :model=>Object})
+      assert_equal CU.inspect(ctx.to_h), %({:seq=>[[1, CanonicalInvokeTest::Create], 2, 3, 2, [1, #<Trailblazer::Activity::Start semantic=:default>], 2, [1, #<Trailblazer::Activity::TaskBuilder::Task user_proc=model>], 2, :model, [1, #<Trailblazer::Activity::End semantic=:success>], 2], :model=>Object})
     end
 
     def save_circuit_options(wrap_ctx, original_args)
