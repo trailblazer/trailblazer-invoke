@@ -288,7 +288,7 @@ class CanonicalInvokeTest < Minitest::Spec
             # **runtime_call_keywords, # {:invoke_method}
           }
 
-          enable_tracing ? Trailblazer::Developer::Wtf.invoke_options_for(**options_with_aliasing) : options_with_aliasing
+          enable_tracing ? Trailblazer::Developer::Wtf.options_for_invoke(**options_with_aliasing) : options_with_aliasing
         end
       end.new
 
@@ -341,7 +341,7 @@ class CanonicalInvokeTest < Minitest::Spec
     it "we can set {:circuit_options}" do
       kernel = Class.new do
         Trailblazer::Invoke.module!(self) do |*args|
-          Trailblazer::Developer::Wtf.invoke_options_for(
+          Trailblazer::Developer::Wtf.options_for_invoke(
             circuit_options: {
               present_options: {render_method: ->(renderer:, **) { renderer.inspect }}
             },
@@ -493,12 +493,9 @@ class CanonicalInvokeTest < Minitest::Spec
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal CU.inspect(ctx[:saved_circuit_options]), %({:read_from_top_level=>true})
-
-
-      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
     end
 
-    it "the user block wins over previous steps, we override {:invoke_method}" do
+    it "the user block wins over previous steps, we override {:invoke_method}" do # DISCUSS: this is already covered implicitly above.
       my_options_step = ->(*) do
         {
           invoke_method: Object, # never called, hopefully.
@@ -516,7 +513,7 @@ class CanonicalInvokeTest < Minitest::Spec
         Trailblazer::Invoke.module!(self) do |*|
           {
             # invoke_method: Trailblazer::Developer::Wtf.method(:invoke)
-            **Trailblazer::Developer::Wtf.invoke_options_for
+            **Trailblazer::Developer::Wtf.options_for_invoke
           }
         end
       end.new
@@ -529,8 +526,6 @@ class CanonicalInvokeTest < Minitest::Spec
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal stdout, create_trace
-
-      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
     end
 
     it "accepts {:adds_for_options_compiler} option to add additional option compilation steps for options-compiler" do
@@ -563,7 +558,7 @@ class CanonicalInvokeTest < Minitest::Spec
           Create,
           self.ctx,
 
-          **Trailblazer::Developer::Wtf.options_for_canonical_invoke
+          **Trailblazer::Developer::Wtf.options_for_canonical_invoke # TODO: test the option explicitly .
         )
       end
 
@@ -571,8 +566,6 @@ class CanonicalInvokeTest < Minitest::Spec
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal stdout, create_trace
-
-      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) # FIXME: after hook?
     end
   end
 
@@ -582,7 +575,7 @@ class CanonicalInvokeTest < Minitest::Spec
         Trailblazer::Invoke.module!(self) do |*|
           {
             # invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
-            **Trailblazer::Developer::Wtf.invoke_options_for
+            **Trailblazer::Developer::Wtf.options_for_invoke
           }
         end
       end.new

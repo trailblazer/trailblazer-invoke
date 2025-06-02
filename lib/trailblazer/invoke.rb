@@ -89,7 +89,6 @@ module Trailblazer
         def self.merge_wrap_runtime(options, options_from_step)
           return options_from_step unless original_wrap_runtime = wrap_runtime_for(options)
           return options_from_step unless mergable_wrap_runtime = wrap_runtime_for(options_from_step)
-          puts "@@@@@ #{options_from_step.inspect}"
 
           default_existing_ext = original_wrap_runtime.default
           default_mergable_ext = mergable_wrap_runtime.default
