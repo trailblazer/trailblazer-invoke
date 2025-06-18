@@ -44,11 +44,33 @@ module Trailblazer
       end
 
       def call(*args, adds_for_options_compiler: [], **kws) # DISCUSS: remove this and pass {} in #__.
+        adds_for_options_compiler = merge_user_options_from_canonical_invoke(adds_for_options_compiler, **kws)
+
         pipeline = Activity::Adds.(@pipeline, *adds_for_options_compiler) # DISCUSS: this could be sped up?
+
+        # TODO: allow easy debugging.
+        # pp pipeline
 
         options, _ = pipeline.({}, [args, kws])
 
+        # TODO: allow easy debugging.
+        # pp options
+
         options
+      end
+
+      # @private
+      def merge_user_options_from_canonical_invoke(adds_for_options_compiler, **kws)
+        adds_for_options_compiler + [
+          [
+            HeuristicMerge.build(->(*) {
+
+              kws # let deep_merge do the work.
+            }), # TODO: constant.
+            id: "user options",
+            append: nil
+          ]
+        ]
       end
 
       # DISCUSS: unfortunately, we cannot use deep_merge by hashie as it converts Hash instances with a default to
@@ -143,7 +165,7 @@ module Trailblazer
           activity,
           options,
           **options_compiler.(activity, options, **kws), # represents {:invoke_method} and {:present_options}
-          **kws,
+          # **kws, # this is merged per default, in {#merge_user_options_from_canonical_invoke}
           &block
         )
       end
@@ -151,7 +173,6 @@ module Trailblazer
       def __?(*args, **kws, &block)
         __(
           *args,
-          # invoke_method: Trailblazer::Developer::Wtf.method(:invoke),
           **Trailblazer::Developer::Wtf.options_for_canonical_invoke, # DISCUSS: technically, we're overriding {:adds_for_options_compiler} here.
           **kws,
           &block

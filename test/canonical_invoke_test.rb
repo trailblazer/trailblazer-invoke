@@ -165,7 +165,7 @@ class CanonicalInvokeTest < Minitest::Spec
 
   #@@@ Test {Invoke.call}-specific options.
   # DISCUSS: why is this needed? for __? and injecting circuit_options and flow_options?
-  it "allows passing {:flow_options} and friends to {#__} which overrides any {flow_options} from options-compiler" do # TODO: test circuit_options, flow_options, invoke_method
+  it "you can bypass options-compiler and simple pass {:flow_options} and friends to {#invoke}" do # TODO: test circuit_options, flow_options, invoke_method
     kernel = Class.new {
       Trailblazer::Invoke.module!(self) do
         {
@@ -182,13 +182,51 @@ class CanonicalInvokeTest < Minitest::Spec
       invoke_method:    MY_INVOKE_METHOD,
     }
 
-    signal, (ctx,) = kernel.__(Capture, self.ctx, **my_overrides)
+    my_passthrough_options_compiler = ->(*, **kws) { kws }
+
+    signal, (ctx,) = kernel.__(Capture, self.ctx, **my_overrides, options_compiler: my_passthrough_options_compiler)
 
     assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:seq=>[], :model=>Object, :captured_flow_options=>\"{:override_everything=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :override=>\\\"circuit_options!\\\", :my_invoke=>true, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
 
+#     # Tracing is done through {:circuit_options}, we override {flow_options} and need to set {:stack} and friends.
+#     stdout, _ = capture_io do
+#       signal, (ctx,) = kernel.__?(Capture, self.ctx, flow_options: my_overrides[:flow_options].merge(Trailblazer::Developer::Trace.invoke_options_compiler_step(Capture, self.ctx)[:flow_options]), options_compiler: my_passthrough_options_compiler)
+#     end
+
+#     # assert_create_run(signal, ctx)
+#     assert_equal stdout, %(CanonicalInvokeTest::Capture
+# |-- \e[32mStart.default\e[0m
+# |-- \e[32m#<Method: #<Class:>.capture_flow_options>\e[0m
+# |-- \e[32m#<Method: #<Class:>.capture_circuit_options>\e[0m
+# `-- End.success
+# )
+#     assert_equal CU.inspect(ctx[:captured_flow_options]).keys, [1]
+  end
+
+  it "{#__} accepts {:flow_options}, {:circuit_options} and {:invoke_method} which are deep-merged with options-compiler" do
+    kernel = Class.new {
+      Trailblazer::Invoke.module!(self) do
+        {
+          flow_options:     {origin: "i am set in canonical user block"}, # shouldn't be visible.
+          circuit_options:  {from: "from canonical user block"},
+          invoke_method:    ->(*) { raise }, # never gets called.
+        }
+      end
+    }.new
+
+    my_merged_options = {
+      flow_options:     {override_everything: true},
+      circuit_options:  {override: "circuit_options!"},
+      invoke_method:    MY_INVOKE_METHOD,
+    }
+
+    signal, (ctx,) = kernel.__(Capture, self.ctx, **my_merged_options)
+
+    assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:seq=>[], :model=>Object, :captured_flow_options=>\"{:origin=>\\\"i am set in canonical user block\\\", :override_everything=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :from=>\\\"from canonical user block\\\", :override=>\\\"circuit_options!\\\", :my_invoke=>true, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
+
     # Tracing is done through {:circuit_options}, we override {flow_options} and need to set {:stack} and friends.
     stdout, _ = capture_io do
-      signal, (ctx,) = kernel.__?(Capture, self.ctx, flow_options: my_overrides[:flow_options].merge(Trailblazer::Developer::Trace.invoke_options_for(Capture, self.ctx)[:flow_options]))
+      signal, (ctx,) = kernel.__?(Capture, self.ctx, flow_options: my_merged_options[:flow_options].merge(Trailblazer::Developer::Trace.invoke_options_compiler_step(Capture, self.ctx)[:flow_options]))
     end
 
     # assert_create_run(signal, ctx)
@@ -198,7 +236,10 @@ class CanonicalInvokeTest < Minitest::Spec
 |-- \e[32m#<Method: #<Class:>.capture_circuit_options>\e[0m
 `-- End.success
 )
-    assert_equal CU.inspect(ctx[:captured_flow_options])[0..28], %({:override_everything=>true, ) # FIXME: hm, test kinda sucks.
+    assert CU.inspect(ctx[:captured_flow_options]) =~ /:origin/
+    assert CU.inspect(ctx[:captured_flow_options]) =~ /:override_everything/
+    assert CU.inspect(ctx[:captured_circuit_options]) =~ /:from/
+    assert_equal CU.inspect(ctx[:captured_circuit_options]) =~ /:my_invoke/, nil # this is not present as wtf overrides {:invoke_method}.
   end
 
   # TODO: test {:extensions} option for {#__}.
@@ -528,7 +569,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal stdout, create_trace
     end
 
-    it "accepts {:adds_for_options_compiler} option to add additional option compilation steps for options-compiler" do
+    it "accepts {:adds_for_options_compiler} from {Developer}" do
       my_options_step = ->(*) do
         {
           # invoke_method: Object, # never called, hopefully.
@@ -566,6 +607,57 @@ class CanonicalInvokeTest < Minitest::Spec
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal stdout, create_trace
+    end
+
+    it "{#__} accepts {:adds_for_options_compiler} option to add additional option compilation steps for options-compiler" do
+      my_options_step = ->(*) do
+        {
+          flow_options:{
+            my_options_step: true,
+          }
+        }
+      end
+      my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
+
+      steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
+      steps = steps + [
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
+      ]
+      Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
+
+      kernel = Class.new do
+        Trailblazer::Invoke.module!(self) do |*|
+          {
+            flow_options: {
+              my_user_block: true,
+            }
+          }
+        end
+      end.new
+
+      # This is the interface for extensions like wtf and trailblazer-pro.
+      # We use the automatic "deep merge" wrapper.
+      my_options_via_adds = Trailblazer::Invoke::Options::HeuristicMerge.build(
+        ->(activity, options, **kws) {
+          {
+            flow_options: {
+              activity: activity,
+              ctx: options.inspect
+            }
+          }
+        }
+      )
+
+      my_adds = [
+        [my_options_via_adds, id: "my_options_via_adds", append: nil]
+      ]
+
+      signal, (ctx, flow_options) = kernel.__(
+        Capture, {},
+        adds_for_options_compiler: my_adds
+      )
+
+      assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:captured_flow_options=>\"{:my_options_step=>true, :my_user_block=>true, :activity=>CanonicalInvokeTest::Capture, :ctx=>\\\"{}\\\"}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
     end
   end
 
