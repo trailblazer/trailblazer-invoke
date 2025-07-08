@@ -2,13 +2,6 @@ require_relative "invoke/version"
 require "trailblazer/activity/dsl/linear"
 require "trailblazer/invoke/matcher"
 
-# IDEA: pipeline for {options_compiler} so we can have
-#  user options like
-#    alias
-#    tracing turned on by whatever condition
-#  features like
-#    pro: add :present_options and wtf invoke/options.
-
 
 module Trailblazer
   module Invoke
@@ -25,8 +18,19 @@ module Trailblazer
       end
     end
 
+# IDEA: pipeline for {options_compiler} so we can have
+#  user options like
+#    alias
+#    tracing turned on by whatever condition
+#  features like
+#    pro: add :present_options and wtf invoke/options.
+
     # Dynamic options per invocation.
     # Implements a pipeline (like the taskWrap) to merge options that are passed to canonical-invoke.
+    #
+    # 1. @steps can be altered by the application and its gems.
+    # 2. We then add the user block from module!
+    # 3.   we then add the runtime canonical #invoke options as another step at runtime. maybe this can be improved?
     class Options
       singleton_class.instance_variable_set(:@steps, []) # TODO: this is private API so far, but will be public one day soon for your extension!
       # This is where we can plug in additional canonical-invoke options compiler, e.g. from {trailblazer-pro}.
@@ -229,7 +233,6 @@ module Trailblazer
 
           container_activity: container_activity,
           exec_context: nil,
-          # wrap_runtime: {activity => ->(*) { snippet }} # TODO: use wrap_runtime once https://github.com/trailblazer/trailblazer-developer/issues/46 is fixed.
           **circuit_options
         )
       end
@@ -247,22 +250,11 @@ module Trailblazer
     require "trailblazer/activity/dsl/linear" # DISCUSS: do we want that here? where should we compile INVOKE_TASK_WRAP?
     # TODO: rename to {#task_wrap_for_invoke}
     def invoke_task_wrap
-      # raise "use Subprocess to always retrieve initial_task_wrap, then add the custom Context() extension as the first element, then merge step options, then consider caching that via invoke."
-      # Instead of creating the {ctx} manually, use an In() filter for the outermost activity.
-      # Currently, the interface is a bit awkward, but we're going to fix this.
-    # The "beginning" of the wrap_static pipeline for the top activity that's invoked.
-      top_level_activity = Class.new(Activity::Railway) do
-        # DISCUSS: let's use {Subprocess()} as a well-defined "hook" when building the taskWrap for the
-        # top-level activity.
-        step Subprocess(Activity::Railway),
-          In() => ->(ctx, **) { ctx } # wrap hash into Trailblazer::Context, super awkward.
-          # Inject(nil) => ->(*) {  } # FIXME: we should be using I/O's internal logic for the "default_ctx" here by making it think there are Inject()s even though most of the times, there aren't.
-      end
+      in_pipe, _ = Trailblazer::Activity::DSL::Linear::VariableMapping.merge_instructions_from_dsl()
 
-      # in_extension_with_call_task = top_level_activity.to_h[:config][:wrap_static].values.first.to_a[0..1] # no Out() extension. FIXME: maybe I/O should have some semi-private API for that?
-      in_extension_without_call_task = top_level_activity.to_h[:config][:wrap_static][Activity::Railway].to_a[0..0] # Only In(), FIXME: add input pipeline using low-level API.
-
-      in_extension_without_call_task # [#<Extension In()>]
+      [
+        Trailblazer::Activity::TaskWrap::Pipeline.Row("invoke.default_ctx", in_pipe)
+      ]
     end
 
     INVOKE_TASK_WRAP = invoke_task_wrap() # DISCUSS: this should be done per Activity subclass so we can do Subprocess(activity).
