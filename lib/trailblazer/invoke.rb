@@ -207,8 +207,8 @@ module Trailblazer
       # TODO:
       # @param :task_wrap_for_activity
       # @param
-      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, invoke_task_wrap: Invoke::INVOKE_TASK_WRAP, **options, &block) # TODO: test {flow_options}
-        # {invoke_task_wrap}: create a {Context}, maybe run a matcher.
+      def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, task_wrap_for_invoke: Invoke::INVOKE_TASK_WRAP, **options, &block) # TODO: test {flow_options}
+        # {task_wrap_for_invoke}: create a {Context}, maybe run a matcher.
 
         # DISCUSS: we could also simply create a Trailblazer::Context here manually.
         task_wrap_extensions_for_activity = task_wrap_extensions_for_activity_for(activity, **options)
@@ -217,7 +217,7 @@ module Trailblazer
         # pipeline  = DSL.pipe_for_composable_input(**options)  # FIXME: rename filters consistently
         # input     = Pipe::Input.new(pipeline)
 
-        task_wrap = invoke_task_wrap + pipeline # send our Invoke steps piggyback with the activity's tw.
+        task_wrap = task_wrap_for_invoke + pipeline # send our Invoke steps piggyback with the activity's tw.
 
           # this could also be achieved using Subprocess and the tw merging logic, but please not at runtime (for now).
         task_wrap_pipeline = Activity::TaskWrap::Pipeline.new(task_wrap)
@@ -248,8 +248,7 @@ module Trailblazer
     end
 
     require "trailblazer/activity/dsl/linear" # DISCUSS: do we want that here? where should we compile INVOKE_TASK_WRAP?
-    # TODO: rename to {#task_wrap_for_invoke}
-    def invoke_task_wrap
+    def task_wrap_for_invoke
       in_pipe, _ = Trailblazer::Activity::DSL::Linear::VariableMapping.merge_instructions_from_dsl()
 
       [
@@ -257,7 +256,7 @@ module Trailblazer
       ]
     end
 
-    INVOKE_TASK_WRAP = invoke_task_wrap() # DISCUSS: this should be done per Activity subclass so we can do Subprocess(activity).
+    INVOKE_TASK_WRAP = task_wrap_for_invoke() # DISCUSS: this should be done per Activity subclass so we can do Subprocess(activity).
 
     module WithMatcher # FIXME
       # module_function
@@ -278,14 +277,14 @@ end
 
 =begin
 1. less cool option, but also less changes:
-  pass Activity into invoke_task_wrap(activity) in #__ which will compute the wrap_static for the actual activity at runtime
-  retrieve class dependency fields (in C.D. specific code by overriding Subprocess), build invoke_task_wrap/variable mapping based on that
+  pass Activity into task_wrap_for_invoke(activity) in #__ which will compute the wrap_static for the actual activity at runtime
+  retrieve class dependency fields (in C.D. specific code by overriding Subprocess), build task_wrap_for_invoke/variable mapping based on that
 2. every Activity::Strategy keeps its wrap_static in a class field.
   C.D. could add to that at compile time
   Subprocess would generically retrieve the nested's wrap_static
   problem here is that mixing Inject() with an already compiled I/O pipe will need some work.
 
-where do we benefit from a Strategy.invoke_task_wrap per subclass?
+where do we benefit from a Strategy.task_wrap_for_invoke per subclass?
   class dependencies
   NOT for setting container path, because we need Subprocess :id for that from the containing activity
 

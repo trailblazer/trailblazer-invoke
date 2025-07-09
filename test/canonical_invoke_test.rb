@@ -143,7 +143,7 @@ class CanonicalInvokeTest < Minitest::Spec
     end
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
-    it "{#__} accepts {:invoke_task_wrap} option" do
+    it "{#__} accepts {:task_wrap_for_invoke} option" do
       def my_task_wrap_step(wrap_ctx, original_args)
         original_args[0][0][:seq] << :i_was_here
 
@@ -154,7 +154,7 @@ class CanonicalInvokeTest < Minitest::Spec
         Trailblazer::Activity::TaskWrap::Pipeline.Row("my.step", method(:my_task_wrap_step)) # gets added before call_task from {Activity}.
       ]
 
-      signal, (ctx,) = kernel.__(Create, self.ctx, invoke_task_wrap: my_task_wrap)
+      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_for_invoke: my_task_wrap)
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal CU.inspect(ctx), %({:seq=>[:i_was_here, :model], :model=>Object})
