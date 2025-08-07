@@ -38,7 +38,7 @@ module Trailblazer
       def self.build(steps: singleton_class.instance_variable_get(:@steps), block:)
         arguments_block = block ? HeuristicMerge.build(block) : Passthrough
 
-        pipeline = Activity::TaskWrap::Pipeline.new(steps + [Activity::TaskWrap::Pipeline.Row("user_block", arguments_block)])
+        pipeline = Trailblazer::Activity::TaskWrap::Pipeline.new(steps + [Trailblazer::Activity::TaskWrap::Pipeline.Row("user_block", arguments_block)])
 
         new(pipeline)
       end
@@ -50,7 +50,7 @@ module Trailblazer
       def call(*args, adds_for_options_compiler: [], **kws) # DISCUSS: remove this and pass {} in #__.
         adds_for_options_compiler = merge_user_options_from_canonical_invoke(adds_for_options_compiler, **kws)
 
-        pipeline = Activity::Adds.(@pipeline, *adds_for_options_compiler) # DISCUSS: this could be sped up?
+        pipeline = Trailblazer::Activity::Adds.(@pipeline, *adds_for_options_compiler) # DISCUSS: this could be sped up?
 
         # TODO: allow easy debugging.
         # pp pipeline
@@ -143,7 +143,7 @@ module Trailblazer
           return original_ext if ext.nil?
           return ext if original_ext.nil?
 
-          Activity::TaskWrap::Extension.new(*(original_ext.instance_variable_get(:@extension_rows) + ext.instance_variable_get(:@extension_rows)))
+          Trailblazer::Activity::TaskWrap::Extension.new(*(original_ext.instance_variable_get(:@extension_rows) + ext.instance_variable_get(:@extension_rows)))
         end
       end
 
@@ -213,16 +213,16 @@ module Trailblazer
         # DISCUSS: we could also simply create a Trailblazer::Context here manually.
         task_wrap_extensions_for_activity = task_wrap_extensions_for_activity_for(activity, **options)
 
-        pipeline = Activity::DSL::Linear::Normalizer::TaskWrap.compile_task_wrap_ary_from_extensions(task_wrap_extensions_for_activity, extensions, {task: activity, **options})
+        pipeline = Trailblazer::Activity::DSL::Linear::Normalizer::TaskWrap.compile_task_wrap_ary_from_extensions(task_wrap_extensions_for_activity, extensions, {task: activity, **options})
         # pipeline  = DSL.pipe_for_composable_input(**options)  # FIXME: rename filters consistently
         # input     = Pipe::Input.new(pipeline)
 
         task_wrap = task_wrap_for_invoke + pipeline # send our Invoke steps piggyback with the activity's tw.
 
           # this could also be achieved using Subprocess and the tw merging logic, but please not at runtime (for now).
-        task_wrap_pipeline = Activity::TaskWrap::Pipeline.new(task_wrap)
+        task_wrap_pipeline = Trailblazer::Activity::TaskWrap::Pipeline.new(task_wrap)
 
-        container_activity = Activity::TaskWrap.container_activity_for(activity, wrap_static: task_wrap_pipeline)
+        container_activity = Trailblazer::Activity::TaskWrap.container_activity_for(activity, wrap_static: task_wrap_pipeline)
 
         invoke_method.(
           activity,
@@ -243,7 +243,7 @@ module Trailblazer
 
         # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
         # Subprocess(activity), subprocess: true
-        _initial_task_wrap_extensions = Activity::DSL::Linear::Normalizer::TaskWrap.compile_initial_task_wrap({task: activity, **options}, subprocess: true, task: activity) # FIXME: test {**options}
+        _initial_task_wrap_extensions = Trailblazer::Activity::DSL::Linear::Normalizer::TaskWrap.compile_initial_task_wrap({task: activity, **options}, subprocess: true, task: activity) # FIXME: test {**options}
       end
     end
 
