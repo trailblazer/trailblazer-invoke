@@ -107,7 +107,9 @@ class CanonicalInvokeTest < Minitest::Spec
         Trailblazer::Activity::TaskWrap::Extension([method(:my_call_task), id: "task_wrap.call_task", prepend: nil])
       ]
 
-      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_extensions_for_activity: my_task_wrap_extensions)
+      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_extensions_for_activity: my_task_wrap_extensions,
+        subprocess: false, # FIXME: needed to make normalizer happy.
+      )
 
       assert_equal signal, Object
       assert_equal CU.inspect(ctx), %({:i_was_here=>true})
@@ -138,9 +140,40 @@ class CanonicalInvokeTest < Minitest::Spec
       end
 
       # We can inject options when using canonical invoke.
-      signal, (ctx, flow_options) = kernel.__(activity, {}, id: "tw ID xxx")
+      signal, (ctx, flow_options) = kernel.__(activity, {}, id: "tw ID xxx",)
+
       assert_equal CU.inspect(ctx.to_h), %({:tw=>\"hello from taskWrap \\\"tw ID xxx\\\"\"})
     end
+
+    it "{:normalizer_extensions} field from Activity can contain variable mapping and it works" do
+      raise "normalizer_extensions should allow adding Inject etc."
+      activity = Class.new(Trailblazer::Activity::Railway) do
+        def self.adds_instruction(task_wrap, **)
+          Trailblazer::Activity::TaskWrap::Extension(
+          # Return an ADDS instruction.
+            [
+              ->(wrap_ctx, original_args) { original_args[0][0][:tw] = "hello from taskWrap #{id.inspect}"; return wrap_ctx, original_args },
+              id: "xxx",
+              prepend: nil
+            ]
+          ).(task_wrap)
+        end
+
+        ext = method(:adds_instruction)
+
+        @state.update!(:fields) do |fields|
+          exts = fields[:task_wrap_extensions] # [call_task]
+          exts = exts + [ext]
+          fields.merge(task_wrap_extensions: exts)
+        end
+      end
+
+      # We can inject options when using canonical invoke.
+      signal, (ctx, flow_options) = kernel.__(activity, {}, id: "tw ID xxx",)
+
+    end
+
+    # TODO: test Inject etc from {:normalizer_extensions}
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
     it "{#__} accepts {:task_wrap_for_invoke} option" do

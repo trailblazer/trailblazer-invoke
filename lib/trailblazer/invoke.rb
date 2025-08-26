@@ -197,6 +197,20 @@ module Trailblazer
     module Call
       module_function
 
+      def Normalizer
+        normalizer_steps =
+          {
+            "step.compile_initial_task_wrap" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::TaskWrap.method(:compile_initial_task_wrap)),
+            "step.initial_task_wrap_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::TaskWrap.method(:normalize_initial_task_wrap_extensions)), # DISCUSS: this sets :initial_task_wrap to the standard [<call task>] pipe, maybe we can save some time by avoiding this somehow?
+            "step.compile_task_wrap"            => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::TaskWrap.method(:compile_task_wrap)),
+            **Activity::DSL::Linear::VariableMapping.steps_for_normalizer, # DISCUSS: how to set "features" for invoke's normalizer?
+          }
+
+        Activity::TaskWrap::Pipeline.new(normalizer_steps.to_a)
+      end
+
+      singleton_class.instance_variable_set(:@normalizer, Normalizer())
+
       # We run the Adapter here, which in turn will run your business operation, then the matcher
       # or whatever you have configured.
       #
@@ -210,17 +224,45 @@ module Trailblazer
       def call(activity, ctx, flow_options: {}, extensions: [], invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, task_wrap_for_invoke: Invoke::INVOKE_TASK_WRAP, **options, &block) # TODO: test {flow_options}
         # {task_wrap_for_invoke}: create a {Context}, maybe run a matcher.
 
+        # Run {activity} as if it's a {step} in another container activity. This implies running some DSL code.
+        # DISCUSS: allow caching here?
+        options_for_normalizer = {}
+        if options.key?(:task_wrap_extensions_for_activity) # FIXME: rename!
+          options_for_normalizer.merge!(
+            initial_task_wrap_extensions: options[:task_wrap_extensions_for_activity]
+          )
+        end
+
+        normalizer = singleton_class.instance_variable_get(:@normalizer)
+        normalizer_ctx, _ = normalizer.({
+          task: activity,
+          subprocess: true,
+          # initial_task_wrap: task_wrap_for_invoke,
+          # initial_task_wrap_extensions:
+          extensions: extensions,
+          non_symbol_options: {},
+          **options_for_normalizer,
+          **options # options passed to {Invoke.call}.
+        }, nil)
+
+        # pp normalizer_ctx
+        task_wrap_pipeline = normalizer_ctx[:task_wrap]
+
+        # Append the Context() step, so we always get a Context instance.
+        task_wrap_pipeline = Trailblazer::Activity::TaskWrap::Pipeline.new(task_wrap_for_invoke + task_wrap_pipeline.to_a) # FIXME: I hate this! maybe via {:extensions}?
+
+        # DISCUSS: we are copying a lot of Subprocess() behavior here, maybe introduce a separate Normalizer?
         # DISCUSS: we could also simply create a Trailblazer::Context here manually.
-        task_wrap_extensions_for_activity = task_wrap_extensions_for_activity_for(activity, **options)
+        # task_wrap_extensions_for_activity = task_wrap_extensions_for_activity_for(activity, **options)
 
-        pipeline = Trailblazer::Activity::DSL::Linear::Normalizer::TaskWrap.compile_task_wrap_ary_from_extensions(task_wrap_extensions_for_activity, extensions, {task: activity, **options})
-        # pipeline  = DSL.pipe_for_composable_input(**options)  # FIXME: rename filters consistently
-        # input     = Pipe::Input.new(pipeline)
+        # pipeline = Trailblazer::Activity::DSL::Linear::Normalizer::TaskWrap.compile_task_wrap_ary_from_extensions(task_wrap_extensions_for_activity, extensions, {task: activity, **options})
+        # # pipeline  = DSL.pipe_for_composable_input(**options)  # FIXME: rename filters consistently
+        # # input     = Pipe::Input.new(pipeline)
 
-        task_wrap = task_wrap_for_invoke + pipeline # send our Invoke steps piggyback with the activity's tw.
+        # task_wrap = task_wrap_for_invoke + pipeline # send our Invoke steps piggyback with the activity's tw.
 
           # this could also be achieved using Subprocess and the tw merging logic, but please not at runtime (for now).
-        task_wrap_pipeline = Trailblazer::Activity::TaskWrap::Pipeline.new(task_wrap)
+        # task_wrap_pipeline = Trailblazer::Activity::TaskWrap::Pipeline.new(task_wrap)
 
         container_activity = Trailblazer::Activity::TaskWrap.container_activity_for(activity, wrap_static: task_wrap_pipeline)
 
@@ -238,13 +280,13 @@ module Trailblazer
       end
 
       # Basically, fetch `activity{:task_wrap_extensions}` and compile it.
-      def task_wrap_extensions_for_activity_for(activity, task_wrap_extensions_for_activity: nil, **options)
-        return task_wrap_extensions_for_activity if task_wrap_extensions_for_activity
+      # def task_wrap_extensions_for_activity_for(activity, task_wrap_extensions_for_activity: nil, **options)
+      #   return task_wrap_extensions_for_activity if task_wrap_extensions_for_activity
 
-        # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
-        # Subprocess(activity), subprocess: true
-        _initial_task_wrap_extensions = Trailblazer::Activity::DSL::Linear::Normalizer::TaskWrap.compile_initial_task_wrap({task: activity, **options}, subprocess: true, task: activity) # FIXME: test {**options}
-      end
+      #   # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
+      #   # Subprocess(activity), subprocess: true
+      #   _initial_task_wrap_extensions = Trailblazer::Activity::DSL::Linear::Normalizer::TaskWrap.compile_initial_task_wrap({task: activity, **options}, subprocess: true, task: activity) # FIXME: test {**options}
+      # end
     end
 
     require "trailblazer/activity/dsl/linear" # DISCUSS: do we want that here? where should we compile INVOKE_TASK_WRAP?
