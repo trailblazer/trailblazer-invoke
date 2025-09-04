@@ -200,12 +200,12 @@ module Trailblazer
       def Normalizer
         normalizer_steps =
           {
-            **Activity::DSL::Linear::VariableMapping.steps_for_normalizer, # DISCUSS: how to set "features" for invoke's normalizer?
             # Extension layer
             "extensions.compute_normalizer_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::Extensions.method(:compute_normalizer_extensions)),
             "extensions.compile_normalizer_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::Extensions.method(:compile_normalizer_extensions)),
 
-            # "step.normalize_task_wrap_extensions" => Activity::DSL::Linear::Normalizer.Task(TaskWrap.method(:normalize_task_wrap_extensions)),
+            **Activity::DSL::Linear::VariableMapping.steps_for_normalizer, # DISCUSS: how to set "features" for invoke's normalizer?
+
             # here, variable mapping is added.
             "step.add_dsl_extensions_to_task_wrap_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::TaskWrap.method(:add_dsl_extensions_to_task_wrap_extensions)), # after this, we got a complete {:task_wrap_extensions} option.
             "step.compile_task_wrap_from_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::TaskWrap.method(:compile_task_wrap_from_extensions)),

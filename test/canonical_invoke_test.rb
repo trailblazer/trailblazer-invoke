@@ -150,32 +150,28 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal CU.inspect(ctx.to_h), %({:tw=>\"hello from taskWrap \\\"tw ID xxx\\\"\"})
     end
 
-    it "{:normalizer_extensions} field from Activity can contain variable mapping and it works" do
-      raise "normalizer_extensions should allow adding Inject etc."
+    # DISCUSS: we don't really need this specific test here in invkoke.
+    it "{:normalizer_extensions} field from Activity can contain variable mapping and it works. This is useful for features like dependency injection or class dependencies" do
       activity = Class.new(Trailblazer::Activity::Railway) do
-        def self.adds_instruction(task_wrap, **)
-          Trailblazer::Activity::TaskWrap::Extension(
-          # Return an ADDS instruction.
-            [
-              ->(wrap_ctx, original_args) { original_args[0][0][:tw] = "hello from taskWrap #{id.inspect}"; return wrap_ctx, original_args },
-              id: "xxx",
-              prepend: nil
-            ]
-          ).(task_wrap)
+        def self.my_normalizer_ext(ctx, id:, non_symbol_options:, **)
+          ctx.merge!(
+            non_symbol_options: non_symbol_options.merge(
+              Trailblazer::Activity::Railway.Inject(:action) => ->(*) { :update }
+            )
+          )
         end
 
-        ext = method(:adds_instruction)
+        my_normalizer_ext = Trailblazer::Activity::DSL::Linear::Normalizer.Extension(method(:my_normalizer_ext))
 
         @state.update!(:fields) do |fields|
           exts = fields[:normalizer_extensions] # [call_task]
-          exts = exts + [ext]
-          fields.merge(normalizer_extensions: exts)
+          fields.merge(normalizer_extensions: exts + [my_normalizer_ext])
         end
       end
 
       # We can inject options when using canonical invoke.
-      signal, (ctx, flow_options) = kernel.__(activity, {}, id: "tw ID xxx",)
-
+      signal, (ctx, flow_options) = kernel.__(activity, {}, id: "my.activity",)
+      assert_equal CU.inspect(ctx.inspect), %(#<Trailblazer::Context::Container wrapped_options={:action=>:update} mutable_options={}>)
     end
 
     # TODO: test Inject etc from {:normalizer_extensions}
