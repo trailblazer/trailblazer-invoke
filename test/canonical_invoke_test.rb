@@ -76,6 +76,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal ctx.class, Trailblazer::Context::Container#::WithAliases
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
+      assert_equal CU.inspect(ctx), %(#<Trailblazer::Context::Container wrapped_options={:seq=>[:model], :model=>Object} mutable_options={}>)
     end
 
     it "{#__?} returns original result set and prints trace" do
@@ -93,7 +94,7 @@ class CanonicalInvokeTest < Minitest::Spec
     end
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
-    it "{#__} accepts {:task_wrap_extensions_for_activity} option" do
+    it "{#__} accepts {:task_wrap_extensions} option" do # DISCUSS: where do we need this?
       def my_call_task(wrap_ctx, original_args)
         # original_args[0][0][:i_was_here] = true
 
@@ -107,7 +108,7 @@ class CanonicalInvokeTest < Minitest::Spec
         Trailblazer::Activity::TaskWrap::Extension([method(:my_call_task), id: "task_wrap.call_task", prepend: nil])
       ]
 
-      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_extensions_for_activity: my_task_wrap_extensions,
+      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_extensions: my_task_wrap_extensions,
         subprocess: false, # FIXME: needed to make normalizer happy.
       )
 
@@ -116,26 +117,30 @@ class CanonicalInvokeTest < Minitest::Spec
     end
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
-    it "{#__} grabs `activity{:task_wrap_extensions}` if not passed (see {:task_wrap_extensions_for_activity}) and passed invoke {**options} to the extensions" do
+    it "{#__} grabs `activity{:normalizer_extensions}` if not passed (see {:task_wrap_extensions}) and passed invoke {**options} to the extensions" do
       activity = Class.new(Trailblazer::Activity::Railway) do
         # This usually happens in extensions such as {trailblazer-dependency}.
-        def self.adds_instruction(task_wrap, id: nil, **)
-          Trailblazer::Activity::TaskWrap::Extension(
-          # Return an ADDS instruction.
+        def self.my_normalizer_ext(ctx, id:, non_symbol_options:, **)
+          my_task_wrap_ext = Trailblazer::Activity::TaskWrap::Extension(
             [
-              ->(wrap_ctx, original_args) { original_args[0][0][:tw] = "hello from taskWrap #{id.inspect}"; return wrap_ctx, original_args },
+              ->(wrap_ctx, original_args) {
+                original_args[0][0][:tw] = "hello from taskWrap #{id.inspect}"
+                return wrap_ctx, original_args
+              },
               id: "xxx",
               prepend: nil
             ]
-          ).(task_wrap)
+          )
+
+          ctx.merge!(non_symbol_options: non_symbol_options.merge(Trailblazer::Activity::Railway.Extension() => my_task_wrap_ext))
         end
 
-        ext = method(:adds_instruction)
+        my_normalizer_ext = Trailblazer::Activity::DSL::Linear::Normalizer.Extension(method(:my_normalizer_ext))
 
         @state.update!(:fields) do |fields|
-          exts = fields[:task_wrap_extensions] # [call_task]
-          exts = exts + [ext]
-          fields.merge(task_wrap_extensions: exts)
+          exts = fields[:normalizer_extensions] # [call_task]
+          exts = exts + [my_normalizer_ext]
+          fields.merge(normalizer_extensions: exts)
         end
       end
 
@@ -162,9 +167,9 @@ class CanonicalInvokeTest < Minitest::Spec
         ext = method(:adds_instruction)
 
         @state.update!(:fields) do |fields|
-          exts = fields[:task_wrap_extensions] # [call_task]
+          exts = fields[:normalizer_extensions] # [call_task]
           exts = exts + [ext]
-          fields.merge(task_wrap_extensions: exts)
+          fields.merge(normalizer_extensions: exts)
         end
       end
 
@@ -177,6 +182,7 @@ class CanonicalInvokeTest < Minitest::Spec
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
     it "{#__} accepts {:task_wrap_for_invoke} option" do
+      raise "do we still need task_wrap_for_invoke now that we do it via the normalizer and Extension()s?"
       def my_task_wrap_step(wrap_ctx, original_args)
         original_args[0][0][:seq] << :i_was_here
 
