@@ -120,7 +120,7 @@ class CanonicalInvokeTest < Minitest::Spec
     it "{#__} grabs `activity{:normalizer_extensions}` if not passed (see {:task_wrap_extensions}) and passed invoke {**options} to the extensions" do
       activity = Class.new(Trailblazer::Activity::Railway) do
         # This usually happens in extensions such as {trailblazer-dependency}.
-        def self.my_normalizer_ext(ctx, id:, non_symbol_options:, **)
+        def self.my_normalizer_ext(ctx, id:, **)
           my_task_wrap_ext = Trailblazer::Activity::TaskWrap::Extension(
             [
               ->(wrap_ctx, original_args) {
@@ -132,7 +132,7 @@ class CanonicalInvokeTest < Minitest::Spec
             ]
           )
 
-          ctx.merge!(non_symbol_options: non_symbol_options.merge(Trailblazer::Activity::Railway.Extension() => my_task_wrap_ext))
+          ctx.merge(Trailblazer::Activity::Railway.Extension() => my_task_wrap_ext)
         end
 
         my_normalizer_ext = Trailblazer::Activity::DSL::Linear::Normalizer.Extension(method(:my_normalizer_ext))
@@ -153,12 +153,8 @@ class CanonicalInvokeTest < Minitest::Spec
     # DISCUSS: we don't really need this specific test here in invkoke.
     it "{:normalizer_extensions} field from Activity can contain variable mapping and it works. This is useful for features like dependency injection or class dependencies" do
       activity = Class.new(Trailblazer::Activity::Railway) do
-        def self.my_normalizer_ext(ctx, id:, non_symbol_options:, **)
-          ctx.merge!(
-            non_symbol_options: non_symbol_options.merge(
-              Trailblazer::Activity::Railway.Inject(:action) => ->(*) { :update }
-            )
-          )
+        def self.my_normalizer_ext(ctx, id:, **)
+          ctx.merge(Trailblazer::Activity::Railway.Inject(:action) => ->(*) { :update })
         end
 
         my_normalizer_ext = Trailblazer::Activity::DSL::Linear::Normalizer.Extension(method(:my_normalizer_ext))
@@ -178,6 +174,7 @@ class CanonicalInvokeTest < Minitest::Spec
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
     it "{#__} accepts {:task_wrap_for_invoke} option" do
+      raise "test that Invoke.call directly accepts and forwards :non_symbol_options to normalizer, we need it in Operation"
       raise "do we still need task_wrap_for_invoke now that we do it via the normalizer and Extension()s?"
       def my_task_wrap_step(wrap_ctx, original_args)
         original_args[0][0][:seq] << :i_was_here
