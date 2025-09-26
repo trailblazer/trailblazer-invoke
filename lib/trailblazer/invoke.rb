@@ -31,13 +31,13 @@ module Trailblazer
     # 2. We then add the user block from module!
     # 3.   we then add the runtime canonical #invoke options as another step at runtime. maybe this can be improved?
     class Options
-      singleton_class.instance_variable_set(:@steps, []) # TODO: this is private API so far, but will be public one day soon for your extension!
+      singleton_class.instance_variable_set(:@steps, {}) # TODO: this is private API so far, but will be public one day soon for your extension!
       # This is where we can plug in additional canonical-invoke options compiler, e.g. from {trailblazer-pro}.
 
       def self.build(steps: singleton_class.instance_variable_get(:@steps), block:)
         arguments_block = block ? HeuristicMerge.build(block) : Passthrough
 
-        pipeline = Trailblazer::Activity::TaskWrap::Pipeline.new(steps + [Trailblazer::Activity::TaskWrap::Pipeline.Row("user_block", arguments_block)])
+        pipeline = Trailblazer::Activity.Pipeline(**steps, "user_block" => arguments_block)
 
         new(pipeline)
       end
@@ -210,7 +210,7 @@ module Trailblazer
             "step.compile_task_wrap_from_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::TaskWrap.method(:compile_task_wrap_from_extensions)),
           }
 
-        Activity::TaskWrap::Pipeline.new(normalizer_steps.to_a)
+        Activity.Pipeline(normalizer_steps)
       end
 
       singleton_class.instance_variable_set(:@normalizer, Normalizer())

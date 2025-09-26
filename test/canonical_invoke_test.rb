@@ -2,7 +2,7 @@ require "test_helper"
 
 # Tests the combination of {#module!} and {#__}.
 class CanonicalInvokeTest < Minitest::Spec
-  after { Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, []) }
+  after { Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, {}) }
 
   class Create < Trailblazer::Activity::FastTrack
     step :model
@@ -309,10 +309,10 @@ class CanonicalInvokeTest < Minitest::Spec
 
     # this would happen in plugin gems.
     steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
-    steps = steps + [
-      Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_1", my_options_step_1),
-      Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_2", my_options_step_2),
-    ]
+    steps = steps.merge(
+      "my_options_step_1" => my_options_step_1,
+      "my_options_step_2" => my_options_step_2,
+    )
     Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
 
@@ -488,11 +488,11 @@ class CanonicalInvokeTest < Minitest::Spec
 
       # this would happen in plugin gems.
       steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
-      steps = steps + [
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_1", my_options_step_1),
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_2", my_options_step_2),
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step_3", my_options_step_3),
-      ]
+      steps = steps.merge(
+        "my_options_step_1" => my_options_step_1,
+        "my_options_step_2" => my_options_step_2,
+        "my_options_step_3" => my_options_step_3,
+      )
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
 
@@ -543,12 +543,12 @@ class CanonicalInvokeTest < Minitest::Spec
       my_aggregate_reader_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_aggregate_reader_step)
 
       steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
-      steps = steps + [
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
+      steps = steps.merge(
+        "my_options_step" => my_options_step,
         # set {:top_level} and read it in the next step.
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_setter_step", my_setter_step),
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_aggregate_reader_step", my_aggregate_reader_step),
-      ]
+        "my_setter_step" => my_setter_step,
+        "my_aggregate_reader_step" => my_aggregate_reader_step,
+      )
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
       kernel = Class.new do
@@ -577,9 +577,9 @@ class CanonicalInvokeTest < Minitest::Spec
       my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
 
       steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
-      steps = steps + [
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
-      ]
+      steps = steps.merge(
+        "my_options_step" => my_options_step,
+      )
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
       kernel = Class.new do
@@ -610,9 +610,9 @@ class CanonicalInvokeTest < Minitest::Spec
       my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
 
       steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
-      steps = steps + [
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
-      ]
+      steps = steps.merge(
+        "my_options_step" => my_options_step,
+      )
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
       kernel = Class.new do
@@ -652,9 +652,9 @@ class CanonicalInvokeTest < Minitest::Spec
       my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
 
       steps = Trailblazer::Invoke::Options.singleton_class.instance_variable_get(:@steps)
-      steps = steps + [
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my_options_step", my_options_step),
-      ]
+      steps = steps.merge(
+        "my_options_step" => my_options_step,
+      )
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
       kernel = Class.new do
