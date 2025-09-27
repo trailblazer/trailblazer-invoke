@@ -117,7 +117,7 @@ class CanonicalInvokeTest < Minitest::Spec
     end
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
-    it "{#__} grabs `activity{:normalizer_extensions}` if not passed (see {:task_wrap_extensions}) and passes invoke {**options} to the normalizer and the extensions" do
+    it "{#__} grabs `activity{:normalizer_extensions}` if not passed and forwards invoke-{**options} to the normalizer and the extensions" do
       activity = Class.new(Trailblazer::Activity::Railway) do
         # This usually happens in extensions such as {trailblazer-dependency}.
         def self.my_normalizer_ext(ctx, id:, **)
@@ -165,7 +165,7 @@ class CanonicalInvokeTest < Minitest::Spec
         end
       end
 
-      # We can inject options when using canonical invoke.
+      # We can inject options like {:id} to canonical invoke. They are passed to the normalizer (and, in turn, to its extensions).
       signal, (ctx, flow_options) = kernel.__(activity, {}, id: "my.activity",)
       assert_equal CU.inspect(ctx.inspect), %(#<Trailblazer::Context::Container wrapped_options={:action=>:update} mutable_options={}>)
     end
