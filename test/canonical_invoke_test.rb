@@ -117,7 +117,7 @@ class CanonicalInvokeTest < Minitest::Spec
     end
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
-    it "{#__} grabs `activity{:normalizer_extensions}` if not passed (see {:task_wrap_extensions}) and passed invoke {**options} to the extensions" do
+    it "{#__} grabs `activity{:normalizer_extensions}` if not passed (see {:task_wrap_extensions}) and passes invoke {**options} to the normalizer and the extensions" do
       activity = Class.new(Trailblazer::Activity::Railway) do
         # This usually happens in extensions such as {trailblazer-dependency}.
         def self.my_normalizer_ext(ctx, id:, **)
@@ -168,28 +168,6 @@ class CanonicalInvokeTest < Minitest::Spec
       # We can inject options when using canonical invoke.
       signal, (ctx, flow_options) = kernel.__(activity, {}, id: "my.activity",)
       assert_equal CU.inspect(ctx.inspect), %(#<Trailblazer::Context::Container wrapped_options={:action=>:update} mutable_options={}>)
-    end
-
-    # TODO: test Inject etc from {:normalizer_extensions}
-
-    # DISCUSS: this test case has nothing to do with the empty module! block.
-    it "{#__} accepts {:task_wrap_for_invoke} option" do
-      raise "test that Invoke.call directly accepts and forwards :non_symbol_options to normalizer, we need it in Operation"
-      raise "do we still need task_wrap_for_invoke now that we do it via the normalizer and Extension()s?"
-      def my_task_wrap_step(wrap_ctx, original_args)
-        original_args[0][0][:seq] << :i_was_here
-
-        return wrap_ctx, original_args
-      end
-
-      my_task_wrap = [
-        Trailblazer::Activity::TaskWrap::Pipeline.Row("my.step", method(:my_task_wrap_step)) # gets added before call_task from {Activity}.
-      ]
-
-      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_for_invoke: my_task_wrap)
-
-      assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
-      assert_equal CU.inspect(ctx), %({:seq=>[:i_was_here, :model], :model=>Object})
     end
   end
 
