@@ -80,7 +80,7 @@ module Trailblazer
       # simple hashes without default. That doesn't play well with wrap_runtime.
       module HeuristicMerge
         def self.build(proc)
-          ->(options, (args, kws)) do
+          ->(options, (args, kws), _) do # DISCUSS: flow_options?
             options_from_step = proc.(*args, **kws, aggregate: options)
 
             # feature of invoke: merge {circuit_options.wrap_runtime}
@@ -200,14 +200,14 @@ module Trailblazer
         normalizer_steps =
           {
             # Extension layer
-            "extensions.compute_normalizer_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::Extensions.method(:compute_normalizer_extensions)),
-            "extensions.compile_normalizer_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::Extensions.method(:compile_normalizer_extensions)),
+            "extensions.compute_normalizer_extensions" => Activity::DSL::Linear::Normalizer::Extensions.method(:compute_normalizer_extensions),
+            "extensions.compile_normalizer_extensions" => Activity::DSL::Linear::Normalizer::Extensions.method(:compile_normalizer_extensions),
 
             **Activity::DSL::Linear::VariableMapping.steps_for_normalizer, # DISCUSS: how to set "features" for invoke's normalizer?
 
             # here, variable mapping is added.
-            "step.add_dsl_extensions_to_task_wrap_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::TaskWrap.method(:add_dsl_extensions_to_task_wrap_extensions)), # after this, we got a complete {:task_wrap_extensions} option.
-            "step.compile_task_wrap_from_extensions" => Activity::DSL::Linear::Normalizer.Task(Activity::DSL::Linear::Normalizer::TaskWrap.method(:compile_task_wrap_from_extensions)),
+            "step.add_dsl_extensions_to_task_wrap_extensions" => Activity::DSL::Linear::Normalizer::TaskWrap.method(:add_dsl_extensions_to_task_wrap_extensions), # after this, we got a complete {:task_wrap_extensions} option.
+            "step.compile_task_wrap_from_extensions" => Activity::DSL::Linear::Normalizer::TaskWrap.method(:compile_task_wrap_from_extensions),
           }
 
         Activity.Pipeline(normalizer_steps)
@@ -233,7 +233,7 @@ module Trailblazer
 
         normalizer = singleton_class.instance_variable_get(:@normalizer)
         # pp normalizer
-        normalizer_ctx, _ = normalizer.({
+        normalizer_ctx, _ = Activity::DSL::Linear::Normalizer.call_normalizer(normalizer, {
           task: activity,
           subprocess: true,
           Trailblazer::Activity::Railway.Inject() => [], # make a new Context.
@@ -241,7 +241,7 @@ module Trailblazer
             [nil, id: nil, delete: "task_wrap.output"]
           ), # super awkward, but we don't want an Out pipeline.
           **options # options passed to {Invoke.call}.
-        }, nil)
+        }, {})
 
         # pp normalizer_ctx
         task_wrap_pipeline = normalizer_ctx[:task_wrap]
@@ -251,25 +251,15 @@ module Trailblazer
 
         invoke_method.(
           activity,
-          [
-            ctx,
-            flow_options
-          ],
-
-          container_activity: container_activity,
-          exec_context: nil,
-          **circuit_options
+          ctx,
+          flow_options,
+          {
+            container_activity: container_activity,
+            exec_context: nil,
+            **circuit_options
+          }
         )
       end
-
-      # Basically, fetch `activity{:task_wrap_extensions}` and compile it.
-      # def task_wrap_extensions_for_activity_for(activity, task_wrap_extensions_for_activity: nil, **options)
-      #   return task_wrap_extensions_for_activity if task_wrap_extensions_for_activity
-
-      #   # DISCUSS: we're mimicking Subprocess-with-intial_task_wrap=logic here.
-      #   # Subprocess(activity), subprocess: true
-      #   _initial_task_wrap_extensions = Trailblazer::Activity::DSL::Linear::Normalizer::TaskWrap.compile_initial_task_wrap({task: activity, **options}, subprocess: true, task: activity) # FIXME: test {**options}
-      # end
     end
 
     module WithMatcher # FIXME

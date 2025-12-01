@@ -9,8 +9,8 @@ module Trailblazer
 
       # TaskWrap extension that's run after the {domain_activity}. This used to sit in the Adapter,
       # but for simplicity reasons we removed Adapter for the evaluation release time.
-      def self.run_matcher(wrap_ctx, original_args)
-        ctx, flow_options = wrap_ctx[:return_args]
+      def self.run_matcher(wrap_ctx, flow_options, _)
+        ctx = wrap_ctx[:return_ctx]
 
         matcher_value = flow_options[:matcher_value]
 
@@ -19,7 +19,7 @@ module Trailblazer
         # Execute the literal block from the controller action.
         matcher_value.call(outcome, [ctx, ctx.to_h]).inspect # DISCUSS: this shouldn't mutate anything.
 
-        return [wrap_ctx, original_args]
+        return wrap_ctx, flow_options
       end
 
       # Adds instruction to add {#run_matcher} to the end of the invoke taskWrap.

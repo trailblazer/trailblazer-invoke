@@ -1,6 +1,6 @@
 # Load this file to add {Railway.__} (the canonical invoke) to all Activity subclasses.
 
-Trailblazer::Invoke.module!(Trailblazer::Activity::DSL::Linear::Strategy.singleton_class) # Add {Railway.__}. # FIXME: remove and make users do it manually?
+# Trailblazer::Invoke.module!(Trailblazer::Activity::DSL::Linear::Strategy.singleton_class) # Add {Railway.__}.
 Trailblazer::Activity.module_eval do
   def self.call(*args, **options, &block)
     Trailblazer::Activity::DSL::Linear::Strategy.__(*args, options, &block)
@@ -17,3 +17,5 @@ module Trailblazer
     end
   end
 end
+
+Trailblazer::Invoke::Activity.configure! # DISCUSS: remove and make users do it manually? or remove the method if called multiple times, to get rid of the warning?

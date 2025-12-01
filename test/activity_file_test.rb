@@ -10,7 +10,7 @@ class ActivityFileTest < Minitest::Spec
       end
     end
 
-    require "trailblazer/invoke/activity"
+    require "trailblazer/invoke/activity" # Installs {Trailblazer::Activity.()}.
 
     signal, (ctx, _) = Trailblazer::Activity.(activity, model: true)
 
@@ -18,7 +18,7 @@ class ActivityFileTest < Minitest::Spec
     assert_equal CU.inspect(ctx.to_h), %({:model=>true, :model_in_capture=>\"true / alias:nil\"})
 
     # test aliasing.
-    Trailblazer::Invoke::Activity.configure! do
+    Trailblazer::Invoke::Activity.configure! do # TODO: this shouldn't print a warning.
       {
         flow_options: {
           context_options: {

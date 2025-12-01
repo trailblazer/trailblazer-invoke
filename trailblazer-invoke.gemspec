@@ -28,9 +28,9 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "trailblazer-activity-dsl-linear", ">= 1.3.0", "< 1.4.0"
+  spec.add_dependency "trailblazer-activity-dsl-linear", ">= 2.0.0", "< 2.1.0"
 
   spec.add_development_dependency "minitest-line"
-  spec.add_development_dependency "trailblazer-developer"
+  # spec.add_development_dependency "trailblazer-developer"
   spec.add_development_dependency "trailblazer-core-utils"
 end

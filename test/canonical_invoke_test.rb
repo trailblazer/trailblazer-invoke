@@ -10,16 +10,16 @@ class CanonicalInvokeTest < Minitest::Spec
   end
 
   class Capture < Trailblazer::Activity::Railway
-    def self.capture_flow_options((ctx, flow_options), **)
+    def self.capture_flow_options(ctx, flow_options, _)
       ctx[:captured_flow_options] = flow_options.inspect
 
-      return Trailblazer::Activity::Right, [ctx, flow_options]
+      return ctx, flow_options, Trailblazer::Activity::Right
     end
 
-    def self.capture_circuit_options((ctx, flow_options), **circuit_options)
+    def self.capture_circuit_options(ctx, flow_options, circuit_options)
       ctx[:captured_circuit_options] = circuit_options.inspect
 
-      return Trailblazer::Activity::Right, [ctx, flow_options]
+      return ctx, flow_options, Trailblazer::Activity::Right
     end
 
     step task: method(:capture_flow_options) # FIXME: {step task: :method} is still wrapped in Option.
@@ -70,7 +70,7 @@ class CanonicalInvokeTest < Minitest::Spec
     }
 
     it "{#__} calls the activity, and returns original resultset" do
-      signal, (ctx,) = kernel.__(Create, self.ctx)
+      ctx, _, signal = kernel.__(Create, self.ctx)
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx.class, Trailblazer::Context::Container#::WithAliases
@@ -83,7 +83,7 @@ class CanonicalInvokeTest < Minitest::Spec
       signal, ctx = nil
 
       stdout, _ = capture_io do
-        signal, (ctx,) = kernel.__?(Create, self.ctx)
+        ctx, _, signal = kernel.__?(Create, self.ctx)
       end
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
@@ -95,20 +95,20 @@ class CanonicalInvokeTest < Minitest::Spec
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
     it "{#__} accepts {:task_wrap_extensions} option" do # DISCUSS: where do we need this?
-      def my_call_task(wrap_ctx, original_args)
-        # original_args[0][0][:i_was_here] = true
+      def my_call_task(wrap_ctx, flow_options, _)
+        # flow_options[0][0][:i_was_here] = true
 
         wrap_ctx[:return_signal] = Object
-        wrap_ctx[:return_args] = {i_was_here: true}
+        wrap_ctx[:return_ctx] = {i_was_here: true}
 
-        return wrap_ctx, original_args
+        return wrap_ctx, flow_options
       end
 
       my_task_wrap_extensions = [
         Trailblazer::Activity::TaskWrap::Extension([method(:my_call_task), id: "task_wrap.call_task", prepend: nil])
       ]
 
-      signal, (ctx,) = kernel.__(Create, self.ctx, task_wrap_extensions: my_task_wrap_extensions,
+      ctx, _, signal = kernel.__(Create, self.ctx, task_wrap_extensions: my_task_wrap_extensions,
         subprocess: false, # FIXME: needed to make normalizer happy.
       )
 
@@ -120,19 +120,22 @@ class CanonicalInvokeTest < Minitest::Spec
     it "{#__} grabs `activity{:normalizer_extensions}` if not passed and forwards invoke-{**options} to the normalizer and the extensions" do
       activity = Class.new(Trailblazer::Activity::Railway) do
         # This usually happens in extensions such as {trailblazer-dependency}.
-        def self.my_normalizer_ext(ctx, id:, **)
+        def self.my_normalizer_ext(ctx, flow_options, _, id:, **)
           my_task_wrap_ext = Trailblazer::Activity::TaskWrap::Extension(
             [
-              ->(wrap_ctx, original_args) {
-                original_args[0][0][:tw] = "hello from taskWrap #{id.inspect}"
-                return wrap_ctx, original_args
+              ->(wrap_ctx, flow_options, _) {
+                wrap_ctx[:application_ctx][:tw] = "hello from taskWrap #{id.inspect}"
+
+                return wrap_ctx, flow_options
               },
               id: "xxx",
               prepend: nil
             ]
           )
 
-          ctx.merge(Trailblazer::Activity::Railway.Extension() => my_task_wrap_ext)
+          ctx = ctx.merge(Trailblazer::Activity::Railway.Extension() => my_task_wrap_ext)
+
+          return ctx, flow_options
         end
 
         my_normalizer_ext = Trailblazer::Activity::DSL::Linear::Normalizer.Extension(method(:my_normalizer_ext))
@@ -145,16 +148,18 @@ class CanonicalInvokeTest < Minitest::Spec
       end
 
       # We can inject options when using canonical invoke.
-      signal, (ctx, flow_options) = kernel.__(activity, {}, id: "tw ID xxx",)
+      ctx, flow_options, signal = kernel.__(activity, {}, id: "tw ID xxx",)
 
       assert_equal CU.inspect(ctx.to_h), %({:tw=>\"hello from taskWrap \\\"tw ID xxx\\\"\"})
     end
 
-    # DISCUSS: we don't really need this specific test here in invkoke.
+    # DISCUSS: we don't really need this specific test here in invoke.
     it "{:normalizer_extensions} field from Activity can contain variable mapping and it works. This is useful for features like dependency injection or class dependencies" do
       activity = Class.new(Trailblazer::Activity::Railway) do
-        def self.my_normalizer_ext(ctx, id:, **)
-          ctx.merge(Trailblazer::Activity::Railway.Inject(:action) => ->(*) { :update })
+        def self.my_normalizer_ext(ctx, flow_options,_, id:, **)
+          ctx = ctx.merge(Trailblazer::Activity::Railway.Inject(:action) => ->(*) { :update })
+
+          return ctx, flow_options
         end
 
         my_normalizer_ext = Trailblazer::Activity::DSL::Linear::Normalizer.Extension(method(:my_normalizer_ext))
@@ -166,12 +171,12 @@ class CanonicalInvokeTest < Minitest::Spec
       end
 
       # We can inject options like {:id} to canonical invoke. They are passed to the normalizer (and, in turn, to its extensions).
-      signal, (ctx, flow_options) = kernel.__(activity, {}, id: "my.activity",)
+      ctx, flow_options, signal = kernel.__(activity, {}, id: "my.activity",)
       assert_equal CU.inspect(ctx.inspect), %(#<Trailblazer::Context::Container wrapped_options={:action=>:update} mutable_options={}>)
     end
   end
 
-  MY_INVOKE_METHOD = ->(activity, args, **circuit_options) { Trailblazer::Activity::TaskWrap.invoke(activity, args, **circuit_options, my_invoke: true) }
+  MY_INVOKE_METHOD = ->(activity, ctx, flow_options, circuit_options) { Trailblazer::Activity::TaskWrap.invoke(activity, ctx, flow_options, circuit_options.merge(my_invoke: true)) }
 
   #@@@ Test {Invoke.call}-specific options.
   # DISCUSS: why is this needed? for __? and injecting circuit_options and flow_options?
@@ -194,13 +199,13 @@ class CanonicalInvokeTest < Minitest::Spec
 
     my_passthrough_options_compiler = ->(*, **kws) { kws }
 
-    signal, (ctx,) = kernel.__(Capture, self.ctx, **my_overrides, options_compiler: my_passthrough_options_compiler)
+    ctx, _, signal = kernel.__(Capture, self.ctx, **my_overrides, options_compiler: my_passthrough_options_compiler)
 
     assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:seq=>[], :model=>Object, :captured_flow_options=>\"{:override_everything=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :override=>\\\"circuit_options!\\\", :my_invoke=>true, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
 
 #     # Tracing is done through {:circuit_options}, we override {flow_options} and need to set {:stack} and friends.
 #     stdout, _ = capture_io do
-#       signal, (ctx,) = kernel.__?(Capture, self.ctx, flow_options: my_overrides[:flow_options].merge(Trailblazer::Developer::Trace.invoke_options_compiler_step(Capture, self.ctx)[:flow_options]), options_compiler: my_passthrough_options_compiler)
+#       ctx, _, signal = kernel.__?(Capture, self.ctx, flow_options: my_overrides[:flow_options].merge(Trailblazer::Developer::Trace.invoke_options_compiler_step(Capture, self.ctx)[:flow_options]), options_compiler: my_passthrough_options_compiler)
 #     end
 
 #     # assert_create_run(signal, ctx)
@@ -230,13 +235,13 @@ class CanonicalInvokeTest < Minitest::Spec
       invoke_method:    MY_INVOKE_METHOD,
     }
 
-    signal, (ctx,) = kernel.__(Capture, self.ctx, **my_merged_options)
+    ctx, _, signal = kernel.__(Capture, self.ctx, **my_merged_options)
 
     assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:seq=>[], :model=>Object, :captured_flow_options=>\"{:origin=>\\\"i am set in canonical user block\\\", :override_everything=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :from=>\\\"from canonical user block\\\", :override=>\\\"circuit_options!\\\", :my_invoke=>true, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
 
     # Tracing is done through {:circuit_options}, we override {flow_options} and need to set {:stack} and friends.
     stdout, _ = capture_io do
-      signal, (ctx,) = kernel.__?(Capture, self.ctx, flow_options: my_merged_options[:flow_options].merge(Trailblazer::Developer::Trace.invoke_options_compiler_step(Capture, self.ctx)[:flow_options]))
+      ctx, _, signal = kernel.__?(Capture, self.ctx, flow_options: my_merged_options[:flow_options].merge(Trailblazer::Developer::Trace.invoke_options_compiler_step(Capture, self.ctx)[:flow_options]))
     end
 
     # assert_create_run(signal, ctx)
@@ -310,7 +315,7 @@ class CanonicalInvokeTest < Minitest::Spec
       end
     end.new
 
-    signal, (ctx, flow_options) = kernel.__(Capture, {})
+    ctx, flow_options, signal = kernel.__(Capture, {})
 
     assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
     assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:captured_flow_options=>\"{:step_1_flow=>true, :step_2_flow=>{:some=>:option}, :user_block=>true}\", :captured_circuit_options=>\"{:exec_context=>#<CanonicalInvokeTest::Capture:0x>, :step_1=>{:option=>true}, :step_2=>{:option=>false}, :override_everything=>true, :my_invoke=>true, :wrap_runtime=>{}, :activity=>#<Trailblazer::Activity:0x>, :runner=>Trailblazer::Activity::TaskWrap::Runner}\"})
@@ -347,7 +352,7 @@ class CanonicalInvokeTest < Minitest::Spec
 
     # no tracing
       stdout, _ = capture_io do
-        signal, (ctx,) = kernel.__(Create, self.ctx, enable_tracing: false)
+        ctx, _, signal = kernel.__(Create, self.ctx, enable_tracing: false)
       end
 
       assert_equal stdout, ""
@@ -355,7 +360,7 @@ class CanonicalInvokeTest < Minitest::Spec
 
     # tracing with {:enable_tracing}.
       stdout, _ = capture_io do
-        signal, (ctx,) = kernel.__(Create, self.ctx, enable_tracing: true)
+        ctx, _, signal = kernel.__(Create, self.ctx, enable_tracing: true)
       end
 
       assert_equal stdout, create_trace
@@ -363,7 +368,7 @@ class CanonicalInvokeTest < Minitest::Spec
 
     # tracing by __?
       stdout, _ = capture_io do
-        signal, (ctx,) = kernel.__?(Create, self.ctx, enable_tracing: false) # DISCUSS: __? still overrides {:enable_tracing}.
+        ctx, _, signal = kernel.__?(Create, self.ctx, enable_tracing: false) # DISCUSS: __? still overrides {:enable_tracing}.
       end
 
       assert_equal stdout, create_trace
@@ -381,7 +386,7 @@ class CanonicalInvokeTest < Minitest::Spec
         end
       end.new
 
-      signal, (ctx, flow_options) = kernel.__(Create, self.ctx, enable_tracing: false)
+      ctx, flow_options, signal = kernel.__(Create, self.ctx, enable_tracing: false)
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal ctx[:model], Object
@@ -403,33 +408,33 @@ class CanonicalInvokeTest < Minitest::Spec
       signal, ctx = nil
 
       stdout, _ = capture_io do
-        signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
+        ctx, flow_options, signal = kernel.__(Create, self.ctx)
       end
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal stdout, %(Trailblazer::Developer::Wtf::Renderer\n)
     end
 
-    def add_1(wrap_ctx, original_args)
-      ctx, = original_args[0]
+    def add_1(wrap_ctx, flow_options, _)
+      ctx = wrap_ctx[:application_ctx]
       ctx[:seq] << [1, wrap_ctx[:task]]
       # ctx[:seq] << 1
 
-      return wrap_ctx, original_args # yay to mutable state. not.
+      return wrap_ctx, flow_options # yay to mutable state. not.
     end
 
-    def add_2(wrap_ctx, original_args)
-      ctx, = original_args[0]
+    def add_2(wrap_ctx, flow_options, _)
+      ctx = wrap_ctx[:application_ctx]
       ctx[:seq] << 2
 
-      return wrap_ctx, original_args # yay to mutable state. not.
+      return wrap_ctx, flow_options # yay to mutable state. not.
     end
 
-    def add_3(wrap_ctx, original_args)
-      ctx, = original_args[0]
+    def add_3(wrap_ctx, flow_options, _)
+      ctx = wrap_ctx[:application_ctx]
       ctx[:seq] << 3
 
-      return wrap_ctx, original_args # yay to mutable state. not.
+      return wrap_ctx, flow_options # yay to mutable state. not.
     end
 
     it "each step can add to {:wrap_runtime}, which is merged by us" do
@@ -482,18 +487,18 @@ class CanonicalInvokeTest < Minitest::Spec
         end
       end.new
 
-      signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
+      ctx, flow_options, signal = kernel.__(Create, self.ctx)
 
 # NOTE that the default from wrap_runtime is also applied with Create as it is merged with the explicit steps.
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
-      assert_equal CU.inspect(ctx.to_h), %({:seq=>[[1, CanonicalInvokeTest::Create], 2, 3, 2, [1, #<Trailblazer::Activity::Start semantic=:default>], 2, [1, #<Trailblazer::Activity::TaskBuilder::Task user_proc=model>], 2, :model, [1, #<Trailblazer::Activity::End semantic=:success>], 2], :model=>Object})
+      assert_equal CU.strip(CU.inspect(ctx.to_h)), %({:seq=>[[1, CanonicalInvokeTest::Create], 2, 3, 2, [1, #<Trailblazer::Activity::Start semantic=:default>], 2, [1, #<Trailblazer::Activity::Circuit::Step::Binary:0x @step=#<Trailblazer::Activity::Circuit::Step::Option:0x @step=#<Trailblazer::Activity::Option::InstanceMethod:0x @filter=:model>>>], 2, :model, [1, #<Trailblazer::Activity::End semantic=:success>], 2], :model=>Object})
     end
 
-    def save_circuit_options(wrap_ctx, original_args)
-      circuit_options = original_args[1]
-      original_args[0][0][:saved_circuit_options] = circuit_options.slice(:read_from_top_level).inspect
+    def save_circuit_options(wrap_ctx, flow_options, _)
+      circuit_options = wrap_ctx[:application_circuit_options]
+      wrap_ctx[:application_ctx][:saved_circuit_options] = circuit_options.slice(:read_from_top_level).inspect
 
-      return wrap_ctx, original_args
+      return wrap_ctx, flow_options
     end
     # Test circuit_options is merged, and we can access {:aggregate}
     it "we can access {:aggregate} when arguments are compiled" do
@@ -540,7 +545,7 @@ class CanonicalInvokeTest < Minitest::Spec
         end
       end.new
 
-      signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
+      ctx, flow_options, signal = kernel.__(Create, self.ctx)
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
       assert_equal CU.inspect(ctx[:saved_circuit_options]), %({:read_from_top_level=>true})
@@ -572,7 +577,7 @@ class CanonicalInvokeTest < Minitest::Spec
       signal, ctx = nil
 
       stdout, _ = capture_io do
-        signal, (ctx, flow_options) = kernel.__(Create, self.ctx)
+        ctx, flow_options, signal = kernel.__(Create, self.ctx)
       end
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
@@ -605,7 +610,7 @@ class CanonicalInvokeTest < Minitest::Spec
       signal, ctx, flow_options = nil
 
       stdout, _ = capture_io do
-        signal, (ctx, flow_options) = kernel.__(
+        ctx, flow_options, signal = kernel.__(
           Create,
           self.ctx,
 
@@ -662,7 +667,7 @@ class CanonicalInvokeTest < Minitest::Spec
         [my_options_via_adds, id: "my_options_via_adds", append: nil]
       ]
 
-      signal, (ctx, flow_options) = kernel.__(
+      ctx, flow_options, signal = kernel.__(
         Capture, {},
         adds_for_options_compiler: my_adds
       )
@@ -688,7 +693,7 @@ class CanonicalInvokeTest < Minitest::Spec
 
     # success
       stdout, _ = capture_io do
-        signal, (ctx, flow_options) = kernel.__(Create, self.ctx) do
+        ctx, flow_options, signal = kernel.__(Create, self.ctx) do
           success { |ctx, model:, **| @render = model.inspect }
         end
       end
@@ -700,7 +705,7 @@ class CanonicalInvokeTest < Minitest::Spec
 
     # failure
       stdout, _ = capture_io do
-        signal, (ctx, flow_options) = kernel.__(Create, {model: false, seq: []}) do
+        ctx, flow_options, signal = kernel.__(Create, {model: false, seq: []}) do
           failure { |ctx, model:, **| @render = model.inspect + " failed" }
         end
       end
@@ -718,7 +723,7 @@ class CanonicalInvokeTest < Minitest::Spec
       default_matcher = {failure: ->(ctx, model:, **) { @render = model.inspect + " failed" }}
 
     # success
-      signal, (ctx, flow_options) = kernel.__(Create, self.ctx, matcher_context: self, default_matcher: default_matcher) do
+      ctx, flow_options, signal = kernel.__(Create, self.ctx, matcher_context: self, default_matcher: default_matcher) do
         success { |ctx, model:, **| @render = model.inspect }
       end
 
@@ -726,7 +731,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal @render, %(Object)
 
     # failure
-      signal, (ctx, flow_options) = kernel.__(Create, {model: false, seq: []}, matcher_context: self, default_matcher: default_matcher) do
+      ctx, flow_options, signal = kernel.__(Create, {model: false, seq: []}, matcher_context: self, default_matcher: default_matcher) do
         success { |ctx, model:, **| @render = model.inspect }
       end
 
