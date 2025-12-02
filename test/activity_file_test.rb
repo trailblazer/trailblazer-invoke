@@ -12,7 +12,7 @@ class ActivityFileTest < Minitest::Spec
 
     require "trailblazer/invoke/activity" # Installs {Trailblazer::Activity.()}.
 
-    signal, (ctx, _) = Trailblazer::Activity.(activity, model: true)
+    ctx, _, signal = Trailblazer::Activity.(activity, model: true)
 
     assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
     assert_equal CU.inspect(ctx.to_h), %({:model=>true, :model_in_capture=>\"true / alias:nil\"})
@@ -29,7 +29,7 @@ class ActivityFileTest < Minitest::Spec
       }
     end
 
-    signal, (ctx, _) = Trailblazer::Activity.(activity, model: true)
+    ctx, _, signal = Trailblazer::Activity.(activity, model: true)
 
     assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:success>)
     # now we got aliasing.

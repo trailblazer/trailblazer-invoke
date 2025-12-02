@@ -12,7 +12,7 @@ module Trailblazer
   module Invoke
     module Activity
       def self.configure!(&block)
-        Trailblazer::Invoke.module!(Trailblazer::Activity::DSL::Linear::Strategy.singleton_class, &block) # Adds {Railway.__}.
+        Trailblazer::Invoke.module!(::Trailblazer::Activity::DSL::Linear::Strategy.singleton_class, &block) # Adds {Railway.__}.
       end
     end
   end

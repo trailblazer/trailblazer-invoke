@@ -233,7 +233,7 @@ module Trailblazer
 
         normalizer = singleton_class.instance_variable_get(:@normalizer)
         # pp normalizer
-        normalizer_ctx, _ = Activity::DSL::Linear::Normalizer.call_normalizer(normalizer, {
+        normalizer_ctx, _ = Trailblazer::Activity::DSL::Linear::Normalizer.call_normalizer(normalizer, {
           task: activity,
           subprocess: true,
           Trailblazer::Activity::Railway.Inject() => [], # make a new Context.
