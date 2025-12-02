@@ -76,7 +76,7 @@ class CanonicalInvokeTest < Minitest::Spec
       assert_equal ctx.class, Trailblazer::Context::Container#::WithAliases
       assert_equal ctx[:model], Object
       assert_equal ctx.keys, [:seq, :model]
-      assert_equal CU.inspect(ctx), %(#<Trailblazer::Context::Container wrapped_options={:seq=>[:model], :model=>Object} mutable_options={}>)
+      assert_equal CU.inspect(ctx.inspect), %(#<Trailblazer::Context::Container wrapped_options={:seq=>[:model], :model=>Object} mutable_options={}>)
     end
 
     it "{#__?} returns original result set and prints trace" do

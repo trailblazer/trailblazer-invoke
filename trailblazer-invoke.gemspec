@@ -30,7 +30,6 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "trailblazer-activity-dsl-linear", ">= 2.0.0", "< 2.1.0"
 
-  spec.add_development_dependency "bundler" # DISCUSS: do we need this?
   spec.add_development_dependency "minitest-line"
   # spec.add_development_dependency "trailblazer-developer"
   spec.add_development_dependency "trailblazer-core-utils"
