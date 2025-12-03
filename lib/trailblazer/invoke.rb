@@ -54,7 +54,9 @@ module Trailblazer
         # TODO: allow easy debugging.
         # pp pipeline
 
-        options, _ = pipeline.({}, [args, kws])
+        flow_options = {}
+
+        (options, _), _ = pipeline.([{}, args, kws], flow_options)
 
         # TODO: allow easy debugging.
         # pp options
@@ -80,8 +82,11 @@ module Trailblazer
       # simple hashes without default. That doesn't play well with wrap_runtime.
       module HeuristicMerge
         def self.build(proc)
-          ->(options, (args, kws), _) do # DISCUSS: flow_options?
+          ->((options, args, kws), flow_options, _) do
+
+            # pp args
             options_from_step = proc.(*args, **kws, aggregate: options)
+
 
             # feature of invoke: merge {circuit_options.wrap_runtime}
             # if has_wrap_runtime?(options)
@@ -105,7 +110,7 @@ module Trailblazer
               end
             end
 
-            return new_options, [args, kws]
+            return [new_options, args, kws], flow_options
           end
         end
 

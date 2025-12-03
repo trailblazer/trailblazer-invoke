@@ -515,7 +515,7 @@ class CanonicalInvokeTest < Minitest::Spec
       end
       my_options_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_options_step)
 
-      my_setter_step = ->(*) { {top_level: true} }
+      my_setter_step = ->(*, **) { {top_level: true} }
       my_setter_step = Trailblazer::Invoke::Options::HeuristicMerge.build(my_setter_step)
 
       my_aggregate_reader_step = ->(activity, options, aggregate:, **options_for_invoke) do
@@ -585,7 +585,7 @@ class CanonicalInvokeTest < Minitest::Spec
     end
 
     it "accepts {:adds_for_options_compiler} from {Developer}" do
-      my_options_step = ->(*) do
+      my_options_step = ->(*, **) do
         {
           # invoke_method: Object, # never called, hopefully.
         }
@@ -599,7 +599,7 @@ class CanonicalInvokeTest < Minitest::Spec
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
       kernel = Class.new do
-        Trailblazer::Invoke.module!(self) do |*|
+        Trailblazer::Invoke.module!(self) do |*, **| # TODO: remove ** once https://bugs.ruby-lang.org/issues/21757 is fixed.
           {
             # invoke_method: Trailblazer::Developer::Wtf.method(:invoke)
             # TODO: add something here.
@@ -625,7 +625,7 @@ class CanonicalInvokeTest < Minitest::Spec
     end
 
     it "{#__} accepts {:adds_for_options_compiler} option to add additional option compilation steps for options-compiler" do
-      my_options_step = ->(*) do
+      my_options_step = ->(*, **) do
         {
           flow_options:{
             my_options_step: true,
@@ -641,7 +641,7 @@ class CanonicalInvokeTest < Minitest::Spec
       Trailblazer::Invoke::Options.singleton_class.instance_variable_set(:@steps, steps)
 
       kernel = Class.new do
-        Trailblazer::Invoke.module!(self) do |*|
+        Trailblazer::Invoke.module!(self) do |*, **|
           {
             flow_options: {
               my_user_block: true,
