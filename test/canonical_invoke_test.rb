@@ -94,7 +94,7 @@ class CanonicalInvokeTest < Minitest::Spec
     end
 
     # DISCUSS: this test case has nothing to do with the empty module! block.
-    it "{#__} accepts {:task_wrap_extensions} option" do # DISCUSS: where do we need this?
+    it "{#__} accepts {:task_wrap_extensions} option via {:normalizer_options}" do # DISCUSS: where do we need this?
       def my_call_task(wrap_ctx, flow_options, _)
         # flow_options[0][0][:i_was_here] = true
 
@@ -741,6 +741,15 @@ class CanonicalInvokeTest < Minitest::Spec
 
       assert_equal signal.inspect, %(#<Trailblazer::Activity::End semantic=:failure>)
       assert_equal @render, %(false failed)
+    end
+
+    it "merges our {:normalizer_options} with matcher-specific options" do
+      ctx, flow_options, signal = kernel.__(Create, self.ctx,  normalizer_options: {Trailblazer::Activity::Railway.In() => [:variable, :seq]}, matcher_context: self) do
+        success { |ctx, **| @render = true }
+      end
+
+      assert_equal CU.inspect(ctx), %(#<Trailblazer::Context::Container wrapped_options={:variable=>nil, :seq=>[:model]} mutable_options={}>)
+      assert_equal @render, true
     end
   end
 
