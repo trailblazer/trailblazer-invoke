@@ -37,7 +37,7 @@ module Trailblazer
       def self.build(steps: singleton_class.instance_variable_get(:@steps), block:)
         arguments_block = block ? HeuristicMerge.build(block) : Passthrough
 
-        pipeline = Trailblazer::Activity.Pipeline(**steps, "user_block" => arguments_block)
+        pipeline = Trailblazer::Activity.Pipeline(steps.merge("user_block" => arguments_block))
 
         new(pipeline)
       end
@@ -207,13 +207,13 @@ module Trailblazer
             # Extension layer
             "extensions.compute_normalizer_extensions" => Activity::DSL::Linear::Normalizer::Extensions.method(:compute_normalizer_extensions),
             "extensions.compile_normalizer_extensions" => Activity::DSL::Linear::Normalizer::Extensions.method(:compile_normalizer_extensions),
-
-            **Activity::DSL::Linear::VariableMapping.steps_for_normalizer, # DISCUSS: how to set "features" for invoke's normalizer?
-
+          }.merge(
+            Activity::DSL::Linear::VariableMapping.steps_for_normalizer # DISCUSS: how to set "features" for invoke's normalizer?
+          ).merge(
             # here, variable mapping is added.
             "step.add_dsl_extensions_to_task_wrap_extensions" => Activity::DSL::Linear::Normalizer::TaskWrap.method(:add_dsl_extensions_to_task_wrap_extensions), # after this, we got a complete {:task_wrap_extensions} option.
             "step.compile_task_wrap_from_extensions" => Activity::DSL::Linear::Normalizer::TaskWrap.method(:compile_task_wrap_from_extensions),
-          }
+          )
 
         Activity.Pipeline(normalizer_steps)
       end
@@ -230,7 +230,7 @@ module Trailblazer
       # TODO:
       # @param :task_wrap_for_activity
       # @param
-      def call(activity, ctx, flow_options: {}, invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, **options, &block) # TODO: test {flow_options}
+      def call(activity, ctx, flow_options: {}, invoke_method: Trailblazer::Activity::TaskWrap.method(:invoke), circuit_options: {}, normalizer_options: {}, **, &block) # TODO: test {flow_options}
         # {task_wrap_for_invoke}: create a {Context}, maybe run a matcher.
 
         # Run {activity} as if it's a {step} in another container activity. This implies running some DSL code.
@@ -238,15 +238,16 @@ module Trailblazer
 
         normalizer = singleton_class.instance_variable_get(:@normalizer)
         # pp normalizer
+
         normalizer_ctx, _ = Trailblazer::Activity::DSL::Linear::Normalizer.call_normalizer(normalizer, {
           task: activity,
           subprocess: true,
+
           Trailblazer::Activity::Railway.Inject() => [], # make a new Context.
           Trailblazer::Activity::Railway.Extension(append: "variable_mapping") => Trailblazer::Activity::TaskWrap::Extension(
             [nil, id: nil, delete: "task_wrap.output"]
-          ), # super awkward, but we don't want an Out pipeline.
-          **options # options passed to {Invoke.call}.
-        }, {})
+          ), # super awkward, but we don't want an Out pipeline
+        }.merge(normalizer_options), {})
 
         # pp normalizer_ctx
         task_wrap_pipeline = normalizer_ctx[:task_wrap]
@@ -271,14 +272,14 @@ module Trailblazer
       # module_function
 
       # Adds the matcher logic to invoking an activity via an "endpoint" (actually, this is not related to endpoints at all).
-      def self.call(activity, ctx, flow_options: {}, matcher_context:, default_matcher:, matcher_extension: Matcher::NORMALIZER_TASK_WRAP_EXTENSION, **kws, &block)
+      def self.call(activity, ctx, flow_options: {}, matcher_context:, default_matcher:, matcher_extension: Matcher::NORMALIZER_TASK_WRAP_EXTENSION, normalizer_options: {}, **kws, &block)
         matcher = Matcher::DSL.new.instance_exec(&block)
 
         matcher_value = Matcher::Value.new(default_matcher, matcher, matcher_context)
 
         flow_options = flow_options.merge(matcher_value: matcher_value) # matchers will be executed in Adapter's taskWrap.
 
-        Call.(activity, ctx, flow_options: flow_options, Activity::Railway.Extension() => matcher_extension, **kws)
+        Call.(activity, ctx, flow_options: flow_options, normalizer_options: normalizer_options.merge(Activity::Railway.Extension() => matcher_extension), **kws)
       end
     end # Invoke
   end

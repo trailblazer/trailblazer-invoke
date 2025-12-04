@@ -108,8 +108,12 @@ class CanonicalInvokeTest < Minitest::Spec
         Trailblazer::Activity::TaskWrap::Extension([method(:my_call_task), id: "task_wrap.call_task", prepend: nil])
       ]
 
-      ctx, _, signal = kernel.__(Create, self.ctx, task_wrap_extensions: my_task_wrap_extensions,
-        subprocess: false, # FIXME: needed to make normalizer happy.
+      ctx, _, signal = kernel.__(
+        Create,
+        self.ctx,
+        normalizer_options: {
+          task_wrap_extensions: my_task_wrap_extensions,
+        }
       )
 
       assert_equal signal, Object
@@ -148,7 +152,7 @@ class CanonicalInvokeTest < Minitest::Spec
       end
 
       # We can inject options when using canonical invoke.
-      ctx, flow_options, signal = kernel.__(activity, {}, id: "tw ID xxx",)
+      ctx, flow_options, signal = kernel.__(activity, {}, normalizer_options: {id: "tw ID xxx"})
 
       assert_equal CU.inspect(ctx.to_h), %({:tw=>\"hello from taskWrap \\\"tw ID xxx\\\"\"})
     end
@@ -171,7 +175,7 @@ class CanonicalInvokeTest < Minitest::Spec
       end
 
       # We can inject options like {:id} to canonical invoke. They are passed to the normalizer (and, in turn, to its extensions).
-      ctx, flow_options, signal = kernel.__(activity, {}, id: "my.activity",)
+      ctx, flow_options, signal = kernel.__(activity, {}, normalizer_options: {id: "my.activity"},)
       assert_equal CU.inspect(ctx.inspect), %(#<Trailblazer::Context::Container wrapped_options={:action=>:update} mutable_options={}>)
     end
   end
