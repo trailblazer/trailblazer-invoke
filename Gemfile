@@ -16,3 +16,4 @@ gem "trailblazer-activity-dsl-linear", github: "trailblazer/trailblazer-activity
 gem "trailblazer-activity", github: "trailblazer/trailblazer-activity", branch: "2-2-positional-circuit-interface"
 gem "trailblazer-developer", github: "trailblazer/trailblazer-developer", branch: "2-2"
 gem "trailblazer-core-utils", github: "trailblazer/trailblazer-core-utils"
+gem "logger"
